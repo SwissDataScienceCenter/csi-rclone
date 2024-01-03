@@ -11,4 +11,5 @@ charts:
         contextPath: ../
         dockerFilePath: ../Dockerfile
         valuesPath:
-          - image
+          - csiControllerRclone.rclone.image
+          - csiNodepluginRclone.rclone.image

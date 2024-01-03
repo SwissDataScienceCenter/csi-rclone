@@ -74,8 +74,6 @@ csiNodepluginRclone:
     env:
       csiEndpoint: unix://plugin/csi.sock
     image:
-      #repository: wunderio/csi-rclone
-      #tag: v1.3.3
       repository: csi-rclone
       tag: "latest"
     imagePullPolicy: IfNotPresent
