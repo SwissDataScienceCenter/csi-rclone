@@ -36,7 +36,6 @@ type Operations interface {
 	DeleteVol(ctx context.Context, rcloneVolume *RcloneVolume, rcloneConfigPath string, pameters map[string]string) error
 	Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPath string, namespace string, rcloneConfigData string, pameters map[string]string) error
 	Unmount(ctx context.Context, volumeId string, targetPath string) error
-	CleanupMountPoint(ctx context.Context, secrets, pameters map[string]string) error
 	GetVolumeById(ctx context.Context, volumeId string) (*RcloneVolume, error)
 	Cleanup()
 }
@@ -85,7 +84,7 @@ func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPa
 	configName := rcloneVolume.deploymentName()
 	cfg, err := ini.Load([]byte(rcloneConfigData))
 	if err != nil {
-		return fmt.Errorf("mountig failed: couldn't load config %s", err)
+		return fmt.Errorf("mounting failed: couldn't load config %s", err)
 	}
 	secs := cfg.Sections()
 	if len(secs) != 2 { //there's also a DEFAULT section
@@ -97,7 +96,7 @@ func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPa
 		if key == "type" {
 			continue
 		}
-		parameters[key] = sec.Key(key).String()
+		params[key] = sec.Key(key).String()
 	}
 	configOpts := ConfigCreateRequest{
 		Name:        configName,
@@ -138,27 +137,6 @@ func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPa
 		},
 	}
 
-	if rcloneConfigData != "" {
-
-		configFile, err := os.CreateTemp("", "rclone.conf")
-		if err != nil {
-			return err
-		}
-
-		// Normally, a defer os.Remove(configFile.Name()) should be placed here.
-		// However, due to a rclone mount --daemon flag, rclone forks and creates a race condition
-		// with this nodeplugin proceess. As a result, the config file gets deleted
-		// before it's reread by a forked process.
-
-		if _, err := configFile.Write([]byte(rcloneConfigData)); err != nil {
-			return err
-		}
-		if err := configFile.Close(); err != nil {
-			return err
-		}
-
-		// mountArgs = append(mountArgs, "--config", configFile.Name())
-	}
 	// create target, os.Mkdirall is noop if it exists
 	err = os.MkdirAll(targetPath, 0750)
 	if err != nil {
@@ -184,45 +162,8 @@ func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPa
 	klog.Infof("created mount: %s", configName)
 	defer resp.Body.Close()
 
-	// env := os.Environ()
-	// cmd := os_exec.Command(mountCmd, mountArgs...)
-	// cmd.Env = env
-	// out, err := cmd.CombinedOutput()
-	// if err != nil {
-	// 	return fmt.Errorf("mounting failed: %v cmd: '%s' remote: '%s' targetpath: %s output: %q",
-	// 		err, mountCmd, remoteWithPath, targetPath, string(out))
-	// }
 	return nil
 }
-
-func ListSecretsByLabel(ctx context.Context, client *kubernetes.Clientset, namespace string, lab map[string]string) (*corev1.SecretList, error) {
-	return client.CoreV1().Secrets(namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: labels.FormatLabels(lab),
-	})
-}
-
-func DeleteSecretsByLabel(ctx context.Context, client *kubernetes.Clientset, namespace string, lab map[string]string) error {
-	//propagation := metav1.DeletePropagationBackground
-	return client.CoreV1().Secrets(namespace).DeleteCollection(ctx, metav1.DeleteOptions{
-		//PropagationPolicy: &propagation,
-	},
-		metav1.ListOptions{
-			LabelSelector: labels.FormatLabels(lab),
-		})
-}
-
-func DeleteDeploymentByLabel(ctx context.Context, client *kubernetes.Clientset, namespace string, lab map[string]string) error {
-	propagation := metav1.DeletePropagationForeground
-	return client.AppsV1().Deployments(namespace).DeleteCollection(ctx, metav1.DeleteOptions{
-		PropagationPolicy: &propagation,
-	}, metav1.ListOptions{
-		LabelSelector: labels.FormatLabels(lab),
-	})
-}
-
-// func (r *RcloneVolume) normalizedVolumeId() string {
-// 	return strings.ToLower(strings.ReplaceAll(r.ID, ":", "-"))
-// }
 
 func (r *RcloneVolume) deploymentName() string {
 	volumeID := fmt.Sprintf("rclone-mounter-%s", r.ID)
@@ -304,11 +245,6 @@ func (r Rclone) Unmount(ctx context.Context, volumeId string, targetPath string)
 	return nil
 }
 
-func (r Rclone) CleanupMountPoint(ctx context.Context, secrets, pameters map[string]string) error {
-	//TODO implement me
-	panic("implement me")
-}
-
 func (r Rclone) GetVolumeById(ctx context.Context, volumeId string) (*RcloneVolume, error) {
 	pvs, err := r.kubeClient.CoreV1().PersistentVolumes().List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -380,7 +316,7 @@ func (r *Rclone) run_daemon() error {
 	rclone_args = append(rclone_args, "--rc-no-auth")
 	rclone_args = append(rclone_args, "--log-file=/tmp/rclone.log")
 	rclone_args = append(rclone_args, fmt.Sprintf("--config=%s", f.Name()))
-	klog.Infof("executing mount command cmd=%s, args=%s, ", rclone_cmd, rclone_args)
+	klog.Infof("running rclone remote control daemon cmd=%s, args=%s, ", rclone_cmd, rclone_args)
 
 	env := os.Environ()
 	cmd := os_exec.Command(rclone_cmd, rclone_args...)
@@ -436,53 +372,4 @@ func (r *Rclone) command(cmd, remote, remotePath string, flags map[string]string
 	}
 
 	return nil
-}
-
-func WaitForPodBySelectorRunning(ctx context.Context, c kubernetes.Interface, namespace, selector string, timeout int) error {
-	podList, err := ListPods(ctx, c, namespace, selector)
-	if err != nil {
-		return err
-	}
-	if len(podList.Items) == 0 {
-		return fmt.Errorf("no pods in %s with selector %s", namespace, selector)
-	}
-
-	for _, pod := range podList.Items {
-		if err := waitForPodRunning(ctx, c, namespace, pod.Name, time.Duration(timeout)*time.Second); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-func ListPods(ctx context.Context, c kubernetes.Interface, namespace, selector string) (*corev1.PodList, error) {
-	listOptions := metav1.ListOptions{LabelSelector: selector}
-	podList, err := c.CoreV1().Pods(namespace).List(ctx, listOptions)
-
-	if err != nil {
-		return nil, err
-	}
-	return podList, nil
-}
-
-func waitForPodRunning(ctx context.Context, c kubernetes.Interface, namespace, podName string, timeout time.Duration) error {
-	return wait.PollImmediate(time.Second, timeout, isPodRunning(ctx, c, podName, namespace))
-}
-
-func isPodRunning(ctx context.Context, c kubernetes.Interface, podName, namespace string) wait.ConditionFunc {
-	return func() (bool, error) {
-		fmt.Printf(".") // progress bar!
-
-		pod, err := c.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
-		if err != nil {
-			return false, err
-		}
-
-		switch pod.Status.Phase {
-		case corev1.PodRunning:
-			return true, nil
-		case corev1.PodFailed, corev1.PodSucceeded:
-			return false, conditions.ErrPodCompleted
-		}
-		return false, nil
-	}
 }

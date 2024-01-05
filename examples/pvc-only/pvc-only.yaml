@@ -33,9 +33,6 @@ spec:
         requests:
             storage: 10Gi
     storageClassName: csi-rclone
-    # selector:
-    #     matchLabels:
-    #         name: csi-rclone-example-2
 ---
 apiVersion: v1
 kind: Secret
