@@ -35,41 +35,6 @@ metadata:
   annotations:
     {}
 ---
-# Source: csi-rclone/templates/csi-rclone-secret.yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: rclone-provisioner-secret
-  namespace: csi-rclone
-type: Opaque
-# options and args for provisioner (mkdir and purge)
-# do NOT put vfs and cache args here.
-stringData:
-  remote: "s3"
-  remotePath: "projectname"
-  s3-provider: "Minio"
-  s3-endpoint: "http://minio.munio:9000"
-  s3-access-key-id: "ACCESS_KEY_ID"
-  s3-secret-access-key: "SECRET_ACCESS_KEY"
----
-# Source: csi-rclone/templates/csi-rclone-secret.yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: rclone-secret
-  namespace: csi-rclone
-type: Opaque
-# options and args for mounting
-# Put VFS and cache args here.
-stringData:
-  remote: "s3"
-  remotePath: "projectname"
-  vfs-cache-mode: "writes"
-  s3-provider: "Minio"
-  s3-endpoint: "http://minio.munio:9000"
-  s3-access-key-id: "ACCESS_KEY_ID"
-  s3-secret-access-key: "SECRET_ACCESS_KEY"
----
 # Source: csi-rclone/templates/csi-rclone-storageclass.yaml
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
@@ -82,14 +47,8 @@ metadata:
     app.kubernetes.io/version: "0.1.0"
     app.kubernetes.io/managed-by: Helm
 provisioner: csi-rclone
-# TODO: check what it does
 volumeBindingMode: Immediate
 reclaimPolicy: Delete
-parameters:
-  csi.storage.k8s.io/provisioner-secret-name: rclone-provisioner-secret
-  csi.storage.k8s.io/provisioner-secret-namespace: csi-rclone
-  csi.storage.k8s.io/node-publish-secret-name: rclone-secret
-  csi.storage.k8s.io/node-publish-secret-namespace: csi-rclone
 ---
 # Source: csi-rclone/templates/csi-controller-rbac.yaml
 apiVersion: rbac.authorization.k8s.io/v1
