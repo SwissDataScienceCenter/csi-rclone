@@ -211,7 +211,13 @@ func (r Rclone) Unmount(ctx context.Context, volumeId string, targetPath string)
 		return err
 	}
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("unmounting failed: couldn't delete mount: %s", string(body))
+		var result map[string]interface{}
+		json.Unmarshal(body, &result)
+		val, ok := result["error"]
+		if !ok || val != "mount not found" {
+			// if the mount errored out, we'd get mount not found and want to continue
+			return fmt.Errorf("unmounting failed: couldn't delete mount: %s", string(body))
+		}
 	}
 	klog.Infof("deleted mount: %s", string(body))
 	defer resp.Body.Close()
@@ -233,7 +239,8 @@ func (r Rclone) Unmount(ctx context.Context, volumeId string, targetPath string)
 		return err
 	}
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("deleting config failed: couldn't delete mount: %s", string(body))
+		//don't error here so storage can be successfully unmounted
+		klog.Errorf("deleting config failed: couldn't delete mount: %s", string(body))
 	}
 	klog.Infof("deleted config: %s", string(body))
 
