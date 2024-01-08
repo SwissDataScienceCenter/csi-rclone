@@ -1,3 +1,4 @@
+storageClassName: csi-rclone 
 namespace:
   enabled: true
 
