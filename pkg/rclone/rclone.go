@@ -157,6 +157,7 @@ func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPa
 		return fmt.Errorf("mounting failed: couldn't create mount: %s", string(body))
 	}
 	klog.Infof("created mount: %s", configName)
+
 	defer resp.Body.Close()
 
 	return nil
@@ -250,7 +251,7 @@ func (r Rclone) Unmount(ctx context.Context, volumeId string, targetPath string)
 }
 
 func (r Rclone) GetVolumeById(ctx context.Context, volumeId string) (*RcloneVolume, error) {
-	pvs, err := r.kubeClient.CoreV1().PersistentVolumes().List(ctx, metav1.ListOptions{})
+	pvs, err := r.kubeClient.CoreV1().PersistentVolumes().List(ctx, metav1.ListOptions{LabelSelector: fmt.Sprintf("name=%s", volumeId)})
 	if err != nil {
 		return nil, err
 	}

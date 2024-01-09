@@ -29,7 +29,7 @@ jobs:
       - name: Flake check
         run: nix flake check
       - name: Helm check
-        run: helm lint deploy/chart
+        run: helm lint deploy/csi-rclone
       - name: Run tests
         uses: workflow/nix-shell-action@v3.3.0
         with:
