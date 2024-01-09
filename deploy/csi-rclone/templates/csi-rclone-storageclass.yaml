@@ -1,7 +1,7 @@
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
-  name: {{ include "chart.fullname" . }}
+  name: {{ .Values.storageClassName }}
   labels:
   {{- include "chart.labels" . | nindent 4 }}
 provisioner: {{ .Values.storageClassName }}

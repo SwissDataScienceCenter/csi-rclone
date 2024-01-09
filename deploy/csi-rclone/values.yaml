@@ -1,7 +1,4 @@
 storageClassName: csi-rclone 
-namespace:
-  enabled: true
-
 csiControllerRclone:
   csiAttacher:
     image:

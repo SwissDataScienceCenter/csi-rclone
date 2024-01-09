@@ -216,8 +216,8 @@ func (r Rclone) Unmount(ctx context.Context, volumeId string, targetPath string)
 	if resp.StatusCode != 200 {
 		var result map[string]interface{}
 		json.Unmarshal(body, &result)
-		val, ok := result["error"]
-		if !ok || val != "mount not found" {
+		errorMsg, found := result["error"]
+		if !found || errorMsg != "mount not found" {
 			// if the mount errored out, we'd get mount not found and want to continue
 			return fmt.Errorf("unmounting failed: couldn't delete mount: %s", string(body))
 		}
