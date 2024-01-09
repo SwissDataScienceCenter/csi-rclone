@@ -19,6 +19,7 @@ func TestMyDriver(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
+	os.Setenv("DRIVER_NAME", "csi-rclone")
 	driver := rclone.NewDriver("hostname", endpoint, kubeClient)
 	go driver.Run()
 	err = os.MkdirAll("/tmp/sanity/mount/", 0700)

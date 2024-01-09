@@ -29,7 +29,7 @@ var (
 type Operations interface {
 	CreateVol(ctx context.Context, volumeName, remote, remotePath, rcloneConfigPath string, pameters map[string]string) error
 	DeleteVol(ctx context.Context, rcloneVolume *RcloneVolume, rcloneConfigPath string, pameters map[string]string) error
-	Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPath string, namespace string, rcloneConfigData string, pameters map[string]string) error
+	Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPath string, namespace string, rcloneConfigData string, readOnly bool, pameters map[string]string) error
 	Unmount(ctx context.Context, volumeId string, targetPath string) error
 	GetVolumeById(ctx context.Context, volumeId string) (*RcloneVolume, error)
 	Cleanup()
@@ -56,6 +56,7 @@ type MountRequest struct {
 type VfsOpt struct {
 	CacheMode    string `json:"cacheMode"`
 	DirCacheTime int    `json:"dirCacheTime"`
+	ReadOnly     bool   `json:"readOnly"`
 }
 type MountOpt struct {
 	AllowNonEmpty bool `json:"allowNonEmpty"`
@@ -75,7 +76,7 @@ type ConfigDeleteRequest struct {
 	Name string `json:"name"`
 }
 
-func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPath, namespace string, rcloneConfigData string, parameters map[string]string) error {
+func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPath, namespace string, rcloneConfigData string, readOnly bool, parameters map[string]string) error {
 	configName := rcloneVolume.deploymentName()
 	cfg, err := ini.Load([]byte(rcloneConfigData))
 	if err != nil {
@@ -125,6 +126,7 @@ func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPa
 		VfsOpt: VfsOpt{
 			CacheMode:    "off",
 			DirCacheTime: 60,
+			ReadOnly:     readOnly,
 		},
 		MountOpt: MountOpt{
 			AllowNonEmpty: true,
