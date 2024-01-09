@@ -48,6 +48,6 @@ pkgs.mkShell {
     export RCLONE_CONFIG=$PROJECT_ROOT/devenv/local-s3/switch-engine-ceph-rclone-config.conf
     
     # Load secrets as ENVs
-    eval "$("$direnv" bash)"
+    eval "$("$direnv" (bash || zsh))"
   '';
 }
