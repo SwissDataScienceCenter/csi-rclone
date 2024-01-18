@@ -1,6 +1,26 @@
 Changelog
 =========
 
+v0.1.5
+------
+
+- fix dir-cache-time to improve speed
+
+v0.1.4
+------
+
+- change to vfs-cache-mode=writes for rclone
+
+v0.1.3
+------
+
+- fix selecting volume on node unpublish
+
+v0.1.2
+------
+
+- fix chart indentation
+
 v0.1.1
 ------
 

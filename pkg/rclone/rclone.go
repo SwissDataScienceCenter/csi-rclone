@@ -11,6 +11,7 @@ import (
 	"os"
 	os_exec "os/exec"
 	"syscall"
+	"time"
 
 	"strings"
 
@@ -54,9 +55,9 @@ type MountRequest struct {
 }
 
 type VfsOpt struct {
-	CacheMode    string `json:"cacheMode"`
-	DirCacheTime int    `json:"dirCacheTime"`
-	ReadOnly     bool   `json:"readOnly"`
+	CacheMode    string        `json:"cacheMode"`
+	DirCacheTime time.Duration `json:"dirCacheTime"`
+	ReadOnly     bool          `json:"readOnly"`
 }
 type MountOpt struct {
 	AllowNonEmpty bool `json:"allowNonEmpty"`
@@ -124,8 +125,8 @@ func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPa
 		Fs:         remoteWithPath,
 		MountPoint: targetPath,
 		VfsOpt: VfsOpt{
-			CacheMode:    "off",
-			DirCacheTime: 60,
+			CacheMode:    "writes",
+			DirCacheTime: 60 * time.Second,
 			ReadOnly:     readOnly,
 		},
 		MountOpt: MountOpt{
@@ -251,7 +252,7 @@ func (r Rclone) Unmount(ctx context.Context, volumeId string, targetPath string)
 }
 
 func (r Rclone) GetVolumeById(ctx context.Context, volumeId string) (*RcloneVolume, error) {
-	pvs, err := r.kubeClient.CoreV1().PersistentVolumes().List(ctx, metav1.ListOptions{LabelSelector: fmt.Sprintf("name=%s", volumeId)})
+	pvs, err := r.kubeClient.CoreV1().PersistentVolumes().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
