@@ -325,7 +325,6 @@ func (r *Rclone) run_daemon() error {
 		loglevel = "NOTICE"
 	}
 	rclone_args = append(rclone_args, fmt.Sprintf("--log-level=%s", loglevel))
-	// rclone_args = append(rclone_args, "--log-file=/tmp/rclone.log")
 	rclone_args = append(rclone_args, fmt.Sprintf("--config=%s", f.Name()))
 	klog.Infof("running rclone remote control daemon cmd=%s, args=%s, ", rclone_cmd, rclone_args)
 

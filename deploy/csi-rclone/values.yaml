@@ -59,4 +59,4 @@ csiNodepluginRclone:
   tolerations: []
   affinity: {}
 kubernetesClusterDomain: cluster.local
-logLevel: NOTICE
+logLevel: NOTICE # Valid levels: DEBUG|INFO|NOTICE|ERROR
