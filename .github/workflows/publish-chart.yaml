@@ -32,13 +32,26 @@ jobs:
           flakes: .#csi-rclone-container-layerd
           script: |
             export TAG=$(echo ${GITHUB_REF} |cut -d/ -f3)
-            nix build .#csi-rclone-container-layerd && ./result | docker load
-            docker tag csi-rclone:latest renku/csi-rclone:latest
-            docker tag csi-rclone:latest renku/csi-rclone:${TAG}
-            echo ${DOCKER_PASSWORD}|docker login -u ${DOCKER_USERNAME} --password-stdin
-            docker push renku/csi-rclone:latest
-            docker push renku/csi-rclone:${TAG}
 
+            nix build .#csi-rclone-container-layerd-aarch64 && ./result | docker load
+            docker tag csi-rclone:latest renku/csi-rclone:latest-aarch64
+            docker tag csi-rclone:latest renku/csi-rclone:${TAG}-aarch64
+            
+            nix build .#csi-rclone-container-layerd-amd64 && ./result | docker load
+            docker tag csi-rclone:latest renku/csi-rclone:latest-amd64
+            docker tag csi-rclone:latest renku/csi-rclone:${TAG}-amd64
+            
+            echo ${DOCKER_PASSWORD}|docker login -u ${DOCKER_USERNAME} --password-stdin
+
+            docker push renku/csi-rclone:latest-aarch64
+            docker push renku/csi-rclone:${TAG}-aarch64
+            docker push renku/csi-rclone:latest-amd64
+            docker push renku/csi-rclone:${TAG}-amd64
+
+            docker manifest create \
+              renku/csi-rclone:${TAG} \
+              --amend renku/csi-rclone:${TAG}-amd64 \
+              --amend renku/csi-rclone:${TAG}-aarch64
       - name: Publish chart
         env:
           GITHUB_TOKEN: ${{ secrets.RENKUBOT_GITHUB_TOKEN }}
