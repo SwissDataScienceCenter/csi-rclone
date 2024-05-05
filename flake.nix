@@ -8,13 +8,15 @@
       let
         # Import pkgs (for your platform) and containerPkgs (x86_64-linux) for crosscompile on MacOS
         pkgs = nixpkgs.legacyPackages.${system};
-        containerPkgs = import nixpkgs { localSystem = system; crossSystem = "x86_64-linux"; };
+        containerPkgsAmd64 = import nixpkgs { localSystem = system; crossSystem = "x86_64-linux"; };
+        containerPkgsAArch64 = import nixpkgs { localSystem = system; crossSystem = "aarch64-linux"; };
 
         goModule = import ./devenv/nix/goModule.nix { inherit pkgs; };
         inherit (goModule) csiDriver csiDriverLinux;
 
-        dockerLayerdImage = import ./devenv/nix/containerImage.nix { inherit pkgs containerPkgs csiDriverLinux; };
-        
+        dockerLayerdImageAmd64 = import ./devenv/nix/containerImageAmd64.nix { inherit pkgs containerPkgsAmd64 csiDriverLinux; };
+        dockerLayerdImageAArch64 = import ./devenv/nix/containerImageAAarch64.nix { inherit pkgs containerPkgsAArch64 csiDriverLinux; };
+
         scripts = import ./devenv/nix/scripts.nix { inherit pkgs; };
         inherit (scripts) initKindCluster deleteKindCluster getKindKubeconfig localDeployScript reloadScript;
 
@@ -24,7 +26,8 @@
 
         packages.csi-rclone-binary = csiDriver;
         packages.csi-rclone-binary-linux = csiDriverLinux;
-        packages.csi-rclone-container-layerd = dockerLayerdImage;
+        packages.csi-rclone-container-layerd-amd64 = dockerLayerdImageAmd64;
+        packages.csi-rclone-container-layerd-aarch64 = dockerLayerdImageAArch64;
         packages.deployToKind = localDeployScript;
         packages.reload = reloadScript;
         packages.initKind = initKindCluster;
