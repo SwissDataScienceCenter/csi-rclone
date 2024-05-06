@@ -1,9 +1,9 @@
-{ pkgs, containerPkgs, csiDriverLinux}:
+{ pkgs, containerPkgs, csiDriverLinux, architecture}:
 
 pkgs.dockerTools.streamLayeredImage {
   name = "csi-rclone";
   tag = "latest";
-  architecture = "amd64";
+  architecture = architecture;
 
   contents = [
     csiDriverLinux

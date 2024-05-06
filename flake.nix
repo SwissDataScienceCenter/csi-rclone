@@ -14,13 +14,15 @@
         goModule = import ./devenv/nix/goModule.nix { inherit pkgs; };
         inherit (goModule) csiDriver csiDriverLinux;
 
-        dockerLayerdImageAmd64 = import ./devenv/nix/containerImageAmd64.nix {
+        dockerLayerdImageAmd64 = import ./devenv/nix/containerImage.nix {
             inherit pkgs csiDriverLinux;
             containerPkgs = containerPkgsAmd64;
+            architecture = "amd64";
          };
-        dockerLayerdImageAArch64 = import ./devenv/nix/containerImageAArch64.nix {
+        dockerLayerdImageAArch64 = import ./devenv/nix/containerImage.nix {
             inherit pkgs csiDriverLinux;
             containerPkgs = containerPkgsAArch64;
+            architecture = "aarch64";
         };
 
         scripts = import ./devenv/nix/scripts.nix { inherit pkgs; };

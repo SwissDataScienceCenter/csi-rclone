@@ -41,7 +41,7 @@ let
   
      text = ''
        echo "Building container image"
-       nix build .#csi-rclone-container-layerd && ./result | docker load
+       nix build .#csi-rclone-container-layerd-amd64 && ./result | docker load
   
        echo "Loading container image into kind"
        kind load docker-image csi-rclone:latest  --name csi-rclone-k8s
@@ -67,7 +67,7 @@ let
   
      text = ''
        echo "Building container image"
-       nix build .#csi-rclone-container-layerd && ./result | docker load
+       nix build .#csi-rclone-container-layerd-amd64 && ./result | docker load
   
        echo "Loading container image into kind"
        kind load docker-image csi-rclone:latest  --name csi-rclone-k8s
