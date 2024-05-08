@@ -1,4 +1,4 @@
-{ pkgs}:
+{ pkgs, architecture}:
 
 let
   csiDriver = pkgs.buildGoModule {
@@ -17,7 +17,7 @@ let
     doCheck = false; # tests need docker and kind, which nixbld user might not have access to
   };
 
-  csiDriverLinux = csiDriver.overrideAttrs (old: old // { CGO_ENABLED = 0; GOOS = "linux";  });
+  csiDriverLinux = csiDriver.overrideAttrs (old: old // { CGO_ENABLED = 0; GOOS = "linux"; GOARCH=architecture; });
 in
 {
   inherit csiDriver csiDriverLinux ;

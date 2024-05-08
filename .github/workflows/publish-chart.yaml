@@ -51,9 +51,17 @@ jobs:
             docker push $DOCKER_REPOSITORY:${TAG}-amd64
 
             docker manifest create \
+              $DOCKER_REPOSITORY:latest \
+              --amend $DOCKER_REPOSITORY:latest-amd64 \
+              --amend $DOCKER_REPOSITORY:latest-aarch64
+            docker manifest create \
               $DOCKER_REPOSITORY:${TAG} \
               --amend $DOCKER_REPOSITORY:${TAG}-amd64 \
               --amend $DOCKER_REPOSITORY:${TAG}-aarch64
+            
+            docker push $DOCKER_REPOSITORY:latest
+            docker push $DOCKER_REPOSITORY:${TAG}
+
       - name: Publish chart
         env:
           GITHUB_TOKEN: ${{ secrets.RENKUBOT_GITHUB_TOKEN }}

@@ -14,6 +14,7 @@ pkgs.dockerTools.streamLayeredImage {
     containerPkgs.fuse3
     containerPkgs.gawk
     containerPkgs.rclone
+    containerPkgs.findutils
   ];
 
   extraCommands = ''
