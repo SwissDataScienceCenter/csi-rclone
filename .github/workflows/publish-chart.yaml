@@ -43,7 +43,7 @@ jobs:
             docker tag csi-rclone:latest $DOCKER_REPOSITORY:latest-amd64
             docker tag csi-rclone:latest $DOCKER_REPOSITORY:${TAG}-amd64
             
-            echo ${DOCKER_PASSWORD}|docker login -u ${DOCKER_USERNAME} --password-stdin
+            echo "${DOCKER_PASSWORD}" | docker login -u ${DOCKER_USERNAME} --password-stdin
 
             docker push $DOCKER_REPOSITORY:latest-aarch64
             docker push $DOCKER_REPOSITORY:${TAG}-aarch64
