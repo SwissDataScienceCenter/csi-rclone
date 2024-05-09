@@ -20,6 +20,5 @@ pkgs.dockerTools.streamLayeredImage {
   extraCommands = ''
     mkdir -p ./plugin
     mkdir -p ./tmp
-    ln /bin/linux_*/csi-rclone-plugin /bin/csi-rclone-plugin
   '';
 }
