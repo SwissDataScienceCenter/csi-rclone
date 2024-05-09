@@ -59,8 +59,8 @@ jobs:
               --amend $DOCKER_REPOSITORY:${TAG}-amd64 \
               --amend $DOCKER_REPOSITORY:${TAG}-aarch64
             
-            docker push $DOCKER_REPOSITORY:latest
-            docker push $DOCKER_REPOSITORY:${TAG}
+            docker manifest push $DOCKER_REPOSITORY:latest
+            docker manifest push $DOCKER_REPOSITORY:${TAG}
 
       - name: Publish chart
         env:
