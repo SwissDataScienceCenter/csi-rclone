@@ -36,8 +36,9 @@ jobs:
             export DOCKER_REPOSITORY=${DOCKER_REPOSITORY:-renku/csi-rclone}
 
             nix build .#csi-rclone-container-layerd-aarch64 && ./result | docker load
+            docker tag csi-rclone:latest csi-rclone:internal
             docker build -t $DOCKER_REPOSITORY:latest-aarch64 - <<- EOF
-              FROM csi-rclone:latest
+              FROM csi-rclone:internal
               RUN ln -s /bin/linux_*/csi-rclone-plugin /bin/csi-rclone-plugin
             EOF
 
