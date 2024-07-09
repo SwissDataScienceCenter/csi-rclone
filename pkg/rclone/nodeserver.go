@@ -159,6 +159,8 @@ func extractFlags(volumeContext map[string]string, secret map[string]string, pvc
 	// Empty argument list
 	flags := make(map[string]string)
 
+	klog.Error("------------- extractFlags ----------------------")
+
 	// Secret values are default, gets merged and overriden by corresponding PV values
 	if len(secret) > 0 {
 		// Needs byte to string casting for map values
@@ -199,6 +201,8 @@ func extractFlags(volumeContext map[string]string, secret map[string]string, pvc
 
 	configData, flags := extractConfigData(flags)
 
+	klog.Errorf("CONFIG-DATA BEFORE       -------------------\n%v\n\n%v\n\n", configData, flags)
+
 	if savedPvcSecret != nil {
 		if savedSecrets, err := decryptSecrets(flags, savedPvcSecret); err != nil {
 			klog.Errorf("cannot decode saved storage secrets: %s", err)
@@ -210,6 +214,8 @@ func extractFlags(volumeContext map[string]string, secret map[string]string, pvc
 			}
 		}
 	}
+
+	klog.Errorf("CONFIG-DATA AFTER       -------------------\n%v", configData)
 
 	return remote, remotePath, configData, flags, nil
 }
