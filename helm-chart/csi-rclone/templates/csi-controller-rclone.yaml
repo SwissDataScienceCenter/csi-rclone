@@ -1,0 +1,106 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "chart.fullname" . }}-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+  {{- include "chart.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.csiControllerRclone.replicas }}
+  selector:
+    matchLabels:
+      app: csi-controller-rclone
+  serviceName: {{ include "chart.fullname" . }}-controller
+  template:
+    metadata:
+      labels:
+        app: csi-controller-rclone
+    spec:
+      serviceAccountName: {{ include "chart.fullname" . }}-controller
+      containers:
+      - name: csi-attacher
+        args:
+        - --v=5
+        - --csi-address=$(ADDRESS)
+        - --leader-election
+
+        env:
+        - name: ADDRESS
+          value: "/csi/csi.sock"
+        - name: KUBERNETES_CLUSTER_DOMAIN
+          value: {{ quote .Values.kubernetesClusterDomain }}
+        image: {{ .Values.csiControllerRclone.csiAttacher.image.repository }}:{{ .Values.csiControllerRclone.csiAttacher.image.tag | default .Chart.AppVersion }}
+        imagePullPolicy: {{ .Values.csiControllerRclone.csiAttacher.imagePullPolicy }}
+        resources: {}
+        volumeMounts:
+        - mountPath: /csi
+          name: socket-dir
+      - name: csi-provisioner
+        args:
+        - --csi-address=$(ADDRESS)
+        - --capacity-ownerref-level=0
+        - "--extra-create-metadata" # do not remove this, it is required for correct functioning
+        env:
+        - name: ADDRESS
+          value: "/csi/csi.sock"
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        image: {{ .Values.csiControllerRclone.csiProvisioner.image.repository }}:{{ .Values.csiControllerRclone.csiProvisioner.image.tag | default .Chart.AppVersion }}
+        imagePullPolicy: {{ .Values.csiControllerRclone.csiProvisioner.imagePullPolicy }}
+        volumeMounts:
+          - name: socket-dir
+            mountPath: /csi
+      - name: rclone
+        args:
+        - /bin/csi-rclone-plugin
+        - run
+        - --nodeid=$(NODE_ID)
+        - --endpoint=$(CSI_ENDPOINT)
+        env:
+        - name: DRIVER_NAME
+          value: {{ .Values.storageClassName | quote}}
+        - name: NODE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: CSI_ENDPOINT
+          value: "unix://plugin/csi.sock"
+        - name: KUBERNETES_CLUSTER_DOMAIN
+          value: {{ quote .Values.kubernetesClusterDomain }}
+        image: {{ .Values.csiControllerRclone.rclone.image.repository }}:{{ .Values.csiControllerRclone.rclone.image.tag | default .Chart.AppVersion }}
+        imagePullPolicy: {{ .Values.csiControllerRclone.rclone.imagePullPolicy }}
+        resources:
+          {{- toYaml .Values.csiControllerRclone.rclone.resources | nindent 12 }}
+        ports:
+        - containerPort: 9808
+          name: healthz
+          protocol: TCP
+        livenessProbe:
+          failureThreshold: 5
+          httpGet:
+            path: /healthz
+            port: healthz
+          initialDelaySeconds: 10
+          timeoutSeconds: 3
+          periodSeconds: 2
+        volumeMounts:
+        - mountPath: /plugin
+          name: socket-dir
+      - name: liveness-probe
+        imagePullPolicy: Always
+        image: registry.k8s.io/sig-storage/livenessprobe:v2.11.0
+        args:
+        - --csi-address=/csi/csi.sock
+        volumeMounts:
+        - mountPath: /csi
+          name: socket-dir
+      volumes:
+      - emptyDir: {}
+        name: socket-dir
+  updateStrategy: {}

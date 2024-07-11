@@ -1,0 +1,134 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "chart.fullname" . }}-nodeplugin
+  namespace: {{ .Release.Namespace }}
+  labels:
+  {{- include "chart.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: csi-nodeplugin-rclone
+    {{- include "chart.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app: csi-nodeplugin-rclone
+      {{- include "chart.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "chart.fullname" . }}-nodeplugin
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+      - name: node-driver-registrar
+        args:
+        - --v=5
+        - --csi-address=/plugin/csi.sock
+        - --kubelet-registration-path=/var/lib/kubelet/plugins/{{ .Values.storageClassName }}/csi.sock
+        env:
+        - name: KUBE_NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: KUBERNETES_CLUSTER_DOMAIN
+          value: {{ quote .Values.kubernetesClusterDomain }}
+        image: {{ .Values.csiNodepluginRclone.nodeDriverRegistrar.image.repository }}:{{
+          .Values.csiNodepluginRclone.nodeDriverRegistrar.image.tag | default .Chart.AppVersion
+          }}
+        imagePullPolicy: {{ .Values.csiNodepluginRclone.nodeDriverRegistrar.imagePullPolicy }}
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - rm -rf /registration/{{ .Values.storageClassName }} /registration/{{ .Values.storageClassName }}-reg.sock
+        resources: {}
+        volumeMounts:
+        - mountPath: /plugin
+          name: plugin-dir
+        - mountPath: /registration
+          name: registration-dir
+      - name: liveness-probe
+        imagePullPolicy: Always
+        image: registry.k8s.io/sig-storage/livenessprobe:v2.11.0
+        args:
+        - --csi-address=/plugin/csi.sock
+        volumeMounts:
+        - mountPath: /plugin
+          name: plugin-dir
+      - name: rclone
+        args:
+        - /bin/csi-rclone-plugin
+        - run
+        - --nodeid=$(NODE_ID)
+        - --endpoint=$(CSI_ENDPOINT)
+        env:
+        - name: NODE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: CSI_ENDPOINT
+          value: "unix://plugin/csi.sock"
+        - name: KUBERNETES_CLUSTER_DOMAIN
+          value: {{ quote .Values.kubernetesClusterDomain }}
+        - name: DRIVER_NAME
+          value: {{ .Values.storageClassName | quote}}
+        - name: LOG_LEVEL
+          value: {{ .Values.logLevel | default "NOTICE" | quote }}
+        image: {{ .Values.csiNodepluginRclone.rclone.image.repository }}:{{ .Values.csiNodepluginRclone.rclone.image.tag | default .Chart.AppVersion }}
+        imagePullPolicy: {{ .Values.csiNodepluginRclone.rclone.imagePullPolicy }}
+        # TODO: check if necessary
+        lifecycle:
+          postStart:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - mount -t fuse.rclone | while read -r mount; do umount $(echo $mount | awk {print $3}) ; done
+        resources:
+          {{- toYaml .Values.csiControllerRclone.rclone.resources | nindent 12 }}
+        securityContext: {{- toYaml .Values.csiNodepluginRclone.rclone.containerSecurityContext
+          | nindent 10 }}
+        ports:
+          - containerPort: 9808
+            name: healthz
+            protocol: TCP
+        livenessProbe:
+          failureThreshold: 5
+          httpGet:
+            path: /healthz
+            port: healthz
+          initialDelaySeconds: 30
+          timeoutSeconds: 10
+          periodSeconds: 30
+        volumeMounts:
+        - mountPath: /plugin
+          name: plugin-dir
+        - mountPath: /var/lib/kubelet/pods
+          mountPropagation: Bidirectional
+          name: pods-mount-dir
+    {{- with .Values.csiNodepluginRclone.nodeSelector }}
+      nodeSelector:
+        {{ toYaml . | nindent 8 }}
+    {{- end }}
+    {{- with .Values.csiNodepluginRclone.affinity }}
+      affinity:
+        {{ toYaml . | nindent 8 }}
+    {{- end }}
+    {{- with .Values.csiNodepluginRclone.tolerations }}
+      tolerations:
+        {{ toYaml . | nindent 8 }}
+    {{- end }}
+      volumes:
+      - hostPath:
+          path: {{ .Values.kubeletDir }}/plugins/{{ .Values.storageClassName }}
+          type: DirectoryOrCreate
+        name: plugin-dir
+      - hostPath:
+          path: {{ .Values.kubeletDir }}/pods
+          type: Directory
+        name: pods-mount-dir
+      - hostPath:
+          path: {{ .Values.kubeletDir }}/plugins_registry
+          type: DirectoryOrCreate
+        name: registration-dir

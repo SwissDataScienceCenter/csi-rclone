@@ -1,0 +1,63 @@
+storageClassName: csi-rclone 
+csiControllerRclone:
+  csiAttacher:
+    image:
+      repository: k8s.gcr.io/sig-storage/csi-attacher
+      tag: v3.4.0
+    imagePullPolicy: IfNotPresent
+  csiProvisioner:
+    image:
+      repository: registry.k8s.io/sig-storage/csi-provisioner
+      tag: v3.4.1
+    imagePullPolicy: IfNotPresent
+  rclone:
+    image:
+      repository: csi-rclone
+      tag: "latest"
+    imagePullPolicy: IfNotPresent
+    resources:
+      {}
+      # limits:
+      #   cpu: 100m
+      #   memory: 128Mi
+      # requests:
+      #   cpu: 100m
+      #   memory: 128M
+  replicas: 1
+  serviceAccount:
+    annotations: {}
+ 
+
+csiNodepluginRclone:
+  nodeDriverRegistrar:
+    image:
+      repository: k8s.gcr.io/sig-storage/csi-node-driver-registrar
+      tag: v2.4.0
+    imagePullPolicy: IfNotPresent
+  rclone:
+    containerSecurityContext:
+      allowPrivilegeEscalation: true
+      capabilities:
+        add:
+        - SYS_ADMIN
+      privileged: true
+    image:
+      repository: csi-rclone
+      tag: "latest"
+    imagePullPolicy: IfNotPresent
+    resources:
+      {}
+      # limits:
+      #   cpu: 100m
+      #   memory: 128Mi
+      # requests:
+      #   cpu: 100m
+      #   memory: 128M
+  serviceAccount:
+    annotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+kubeletDir: /var/lib/kubelet # Tune if running in k0s, k3s, ...
+kubernetesClusterDomain: cluster.local
+logLevel: NOTICE # Valid levels: DEBUG|INFO|NOTICE|ERROR
