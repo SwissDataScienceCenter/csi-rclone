@@ -73,34 +73,31 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 	// differing capacity, so we need to remember it
 	volSizeBytes := int64(req.GetCapacityRange().GetRequiredBytes())
 	cs.mutex.Lock()
+	defer cs.mutex.Unlock()
 	if val, ok := cs.active_volumes[volumeName]; ok && val != volSizeBytes {
 		cs.mutex.Unlock()
 		return nil, status.Errorf(codes.AlreadyExists, "Volume operation already exists for volume %s", volumeName)
 	}
 	cs.active_volumes[volumeName] = volSizeBytes
-	cs.mutex.Unlock()
 
-	pvcName := req.Parameters["csi.storage.k8s.io/pvc/name"]
-	ns := req.Parameters["csi.storage.k8s.io/pvc/namespace"]
-	// NOTE: We need the PVC name and namespace when mounting the volume, not here
-	// that is why they are passed to the VolumeContext
-	pvcSecret, err := GetPvcSecret(ctx, ns, pvcName)
-	if err != nil {
-		return nil, err
-	}
-	remote, remotePath, _, _, err := extractFlags(req.GetParameters(), req.GetSecrets(), pvcSecret, nil)
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "CreateVolume: %v", err)
+	// See https://github.com/kubernetes-csi/external-provisioner/blob/v5.1.0/pkg/controller/controller.go#L75
+	// on how parameters from the persistent volume are parsed
+	// We have to pass these into the context so that the node server can use them
+	secretName, nameFound := req.Parameters["csi.storage.k8s.io/provisioner-secret-name"]
+	secretNs, nsFound := req.Parameters["csi.storage.k8s.io/provisioner-secret-namespace"]
+	volumeContext := map[string]string{}
+	if nameFound && nsFound {
+		volumeContext["secretName"] = secretName
+		volumeContext["secretNamespace"] = secretNs
+	} else {
+		// This is here for compatibility reasons before this update the secret name was equal to the PVC
+		volumeContext["secretName"] = req.Parameters["csi.storage.k8s.io/pvc/name"]
+		volumeContext["secretNamespace"] = req.Parameters["csi.storage.k8s.io/pvc/namespace"]
 	}
 	return &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
 			VolumeId: volumeName,
-			VolumeContext: map[string]string{
-				"secretName": pvcName,
-				"namespace":  ns,
-				"remote":     remote,
-				"remotePath": remotePath,
-			},
+			VolumeContext: volumeContext,
 		},
 	}, nil
 

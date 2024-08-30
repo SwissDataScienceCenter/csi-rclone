@@ -17,6 +17,7 @@ import (
 
 	"golang.org/x/net/context"
 	"gopkg.in/ini.v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog"
@@ -30,7 +31,7 @@ var (
 type Operations interface {
 	CreateVol(ctx context.Context, volumeName, remote, remotePath, rcloneConfigPath string, pameters map[string]string) error
 	DeleteVol(ctx context.Context, rcloneVolume *RcloneVolume, rcloneConfigPath string, pameters map[string]string) error
-	Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPath string, namespace string, rcloneConfigData string, readOnly bool, pameters map[string]string) error
+	Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPath string, rcloneConfigData string, readOnly bool, pameters map[string]string) error
 	Unmount(ctx context.Context, volumeId string, targetPath string) error
 	GetVolumeById(ctx context.Context, volumeId string) (*RcloneVolume, error)
 	Cleanup()
@@ -77,7 +78,7 @@ type ConfigDeleteRequest struct {
 	Name string `json:"name"`
 }
 
-func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPath, namespace string, rcloneConfigData string, readOnly bool, parameters map[string]string) error {
+func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPath, rcloneConfigData string, readOnly bool, parameters map[string]string) error {
 	configName := rcloneVolume.deploymentName()
 	cfg, err := ini.Load([]byte(rcloneConfigData))
 	if err != nil {
@@ -272,13 +273,16 @@ func (r Rclone) GetVolumeById(ctx context.Context, volumeId string) (*RcloneVolu
 				if err == nil && sec != nil && len(sec.Data) > 0 {
 					secrets := make(map[string]string)
 					for k, v := range sec.Data {
+						// Note you have to decode the secret here
 						secrets[k] = string(v)
 					}
 				}
 			}
 
-			pvcSecret, err := GetPvcSecret(ctx, pv.Spec.ClaimRef.Namespace, pv.Spec.ClaimRef.Name)
-			if err != nil {
+			// This is for compatibility reasons, in the old version the PVC secret was the same name as the PVC
+			// Now the secret is taken from the PVC annotation and injected in the `secrets` map above
+			pvcSecret, err := getSecret(ctx, pv.Spec.ClaimRef.Namespace, pv.Spec.ClaimRef.Name)
+			if err != nil && !apierrors.IsNotFound(err) {
 				return nil, err
 			}
 			remote, path, _, _, err = extractFlags(pv.Spec.CSI.VolumeAttributes, secrets, pvcSecret, nil)

@@ -7,3 +7,12 @@ metadata:
 provisioner: {{ .Values.storageClassName }}
 volumeBindingMode: Immediate
 reclaimPolicy: Delete
+parameters:
+  # CreateVolumeRequest.secrets or DeleteVolumeRequest.secrets
+  # If creating a PersistentVolume by hand then these are not needed, see below
+  csi.storage.k8s.io/provisioner-secret-name: ${pvc.annotations['csi-rclone.dev/secretName']}
+  csi.storage.k8s.io/provisioner-secret-namespace: ${pvc.namespace}
+  # Populates NodePublishVolumeRequest.secrets
+  # If creating a PersistentVolume by hand then set spec.csi.nodePublishSecretRef.name and spec.csi.NodePublishSecretRef.namespace
+  csi.storage.k8s.io/node-publish-secret-name: ${pvc.annotations['csi-rclone.dev/secretName']}
+  csi.storage.k8s.io/node-publish-secret-namespace: ${pvc.namespace}

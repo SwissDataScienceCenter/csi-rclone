@@ -15,6 +15,7 @@ import (
 
 	"gopkg.in/ini.v1"
 	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog"
 
@@ -29,7 +30,8 @@ import (
 	csicommon "github.com/kubernetes-csi/drivers/pkg/csi-common"
 )
 
-const CSI_ANNOTATION_PREFIX = "csi-rclone.dev/"
+const CSI_ANNOTATION_PREFIX = "csi-rclone.dev"
+const pvcSecretNameAnnotation = CSI_ANNOTATION_PREFIX + "/secretName"
 
 type nodeServer struct {
 	*csicommon.DefaultNodeServer
@@ -57,17 +59,28 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 	volumeContext := req.GetVolumeContext()
 	readOnly := req.GetReadonly()
 	secretName := volumeContext["secretName"]
-	namespace := volumeContext["namespace"]
+	secretNamespace := volumeContext["secretNamespace"]
 
-	pvcSecret, err := GetPvcSecret(ctx, namespace, secretName)
-	if err != nil {
-		return nil, err
+	// This is here for compatiblity reasons
+	// If the req.Secrets is empty it means that the old method of passing the secret is used
+	// Where the secret is not automatically loaded and we have to read it here.
+	var pvcSecret *v1.Secret = nil
+	var err error
+	if len(req.GetSecrets()) == 0 {
+		pvcSecret, err = getSecret(ctx, secretNamespace, secretName)
+		if err != nil && !apierrors.IsNotFound(err) {
+			return nil, err
+		}
 	}
 
+	// Regardless of whetehr the secret is passed via annotations or not we assume that the encrypted secret
+	// name is the PVC name or annotation value + "-secrets". There is no way for the user to pass this value
+	// to the CSI driver.
 	savedSecretName := secretName + "-secrets"
-
-	savedPvcSecret, err := GetPvcSecret(ctx, namespace, savedSecretName)
-	if err != nil {
+	savedPvcSecret, err := getSecret(ctx, secretNamespace, savedSecretName)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return nil, err
+	} else if apierrors.IsNotFound(err) {
 		klog.Warningf("Cannot find saved secrets %s: %s", savedSecretName, err)
 	}
 
@@ -110,7 +123,7 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 		Remote:     remote,
 		RemotePath: remotePath,
 	}
-	err = ns.RcloneOps.Mount(ctx, rcloneVol, targetPath, namespace, configData, readOnly, flags)
+	err = ns.RcloneOps.Mount(ctx, rcloneVol, targetPath, configData, readOnly, flags)
 	if err != nil {
 		if os.IsPermission(err) {
 			return nil, status.Error(codes.PermissionDenied, err.Error())
@@ -127,16 +140,18 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 	return &csi.NodePublishVolumeResponse{}, nil
 }
 
-func GetPvcSecret(ctx context.Context, pvcNamespace string, pvcName string) (*v1.Secret, error) {
+func getSecret(ctx context.Context, namespace, name string) (*v1.Secret, error) {
 	cs, err := kube.GetK8sClient()
-	if pvcName == "" || pvcNamespace == "" {
-		return nil, nil
-	}
-	pvcSecret, err := cs.CoreV1().Secrets(pvcNamespace).Get(ctx, pvcName, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
-	return pvcSecret, nil
+	if namespace == "" {
+		return nil, fmt.Errorf("Failed to read Secret with K8s client because namespace is blank")
+	}
+	if name == "" {
+		return nil, fmt.Errorf("Failed to read Secret with K8s client because name is blank")
+	}
+	return cs.CoreV1().Secrets(namespace).Get(ctx, name, metav1.GetOptions{})
 }
 
 func validatePublishVolumeRequest(req *csi.NodePublishVolumeRequest) error {
