@@ -58,7 +58,6 @@ spec:
             mountPath: /csi
       - name: rclone
         args:
-        - /bin/csi-rclone-plugin
         - run
         - --nodeid=$(NODE_ID)
         - --endpoint=$(CSI_ENDPOINT)

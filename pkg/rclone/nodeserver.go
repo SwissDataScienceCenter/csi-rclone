@@ -200,10 +200,6 @@ func extractFlags(volumeContext map[string]string, secret map[string]string, pvc
 		}
 	}
 
-	if e := validateFlags(flags); e != nil {
-		return "", "", "", flags, e
-	}
-
 	remote := flags["remote"]
 	remotePath := flags["remotePath"]
 
@@ -265,16 +261,6 @@ func updateConfigData(remote string, configData string, savedSecrets map[string]
 	iniData.WriteTo(buf)
 
 	return buf.String(), nil
-}
-
-func validateFlags(flags map[string]string) error {
-	if _, ok := flags["remote"]; !ok {
-		return status.Errorf(codes.InvalidArgument, "missing volume context value: remote")
-	}
-	if _, ok := flags["remotePath"]; !ok {
-		return status.Errorf(codes.InvalidArgument, "missing volume context value: remotePath")
-	}
-	return nil
 }
 
 func extractConfigData(parameters map[string]string) (string, map[string]string) {

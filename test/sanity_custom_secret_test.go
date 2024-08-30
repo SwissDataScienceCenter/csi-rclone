@@ -12,7 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func TestSanityWithDecryptLegacy(t *testing.T) {
+func TestSanityCustomSecret(t *testing.T) {
 	// Setup the full driver and its environment
 	endpoint := "unix:///tmp/plugin/csi.sock"
 	kubeClient, err := kube.GetK8sClient()
@@ -59,30 +59,23 @@ func TestSanityWithDecryptLegacy(t *testing.T) {
 			"remotePath": "giab/",
 			"secretKey":  "cw_0x689RpI-jtRR7oE8h_eQsKImvJapLeSbXpwF4e4=",
 			"configData": `[my-s3]
-type=<sensitive>
+type=s3
 provider=AWS`},
 		Type: "Opaque",
 	}, metav1.CreateOptions{})
 	defer kubeClient.CoreV1().Secrets("csi-rclone").Delete(context.Background(), "test-pvc", metav1.DeleteOptions{})
 
-	// create secret containing saved storage secrets. `type` which is `s3` is encrypted like a secret
-	// if decryption fails, then the storage cannot be mounted
-	kubeClient.CoreV1().Secrets("csi-rclone").Create(context.Background(), &v1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "test-pvc-secrets", Namespace: "csi-rclone"},
-		StringData: map[string]string{"type": "gAAAAABK-fBwYcjuQgctfZknI2ko2uLqj6DRzRa7kFTKnWm_nkjwGWGTai5eyhNXlp6_6QjeTC7B8IWvhBsvG1Q6Zk2eDYDVQg=="},
-		Type:       "Opaque",
-	}, metav1.CreateOptions{})
-	defer kubeClient.CoreV1().Secrets("csi-rclone").Delete(context.Background(), "test-pvc-secrets", metav1.DeleteOptions{})
-
 	cfg := sanity.NewTestConfig()
 	cfg.Address = endpoint
-
+	cfg.SecretsFile = "testdata/secrets.yaml"
 	cfg.TargetPath = mntDir
 	cfg.StagingPath = mntStageDir
 	cfg.Address = endpoint
 	cfg.TestVolumeParameters = map[string]string{
-		"csi.storage.k8s.io/pvc/namespace": "csi-rclone",
-		"csi.storage.k8s.io/pvc/name":      "test-pvc",
+		"csi.storage.k8s.io/pvc/namespace":                 "csi-rclone",
+		"csi.storage.k8s.io/pvc/name":                      "some-pvc",
+		"csi.storage.k8s.io/node-publish-secret-name":      "test-pvc",
+		"csi.storage.k8s.io/node-publish-secret-namespace": "csi-rclone",
 	}
 	sanity.Test(t, cfg)
 }

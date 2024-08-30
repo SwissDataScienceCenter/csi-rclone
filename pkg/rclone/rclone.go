@@ -34,13 +34,15 @@ type Operations interface {
 	Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPath string, rcloneConfigData string, readOnly bool, pameters map[string]string) error
 	Unmount(ctx context.Context, volumeId string, targetPath string) error
 	GetVolumeById(ctx context.Context, volumeId string) (*RcloneVolume, error)
-	Cleanup()
+	Cleanup() error
+	Run() error
 }
 
 type Rclone struct {
 	execute    exec.Interface
 	kubeClient *kubernetes.Clientset
-	process    int
+	daemonCmd  *os_exec.Cmd
+	port       int
 }
 
 type RcloneVolume struct {
@@ -108,7 +110,7 @@ func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPa
 		return fmt.Errorf("mounting failed: couldn't create request body: %s", err)
 	}
 	requestBody := bytes.NewBuffer(postBody)
-	resp, err := http.Post("http://localhost:5572/config/create", "application/json", requestBody)
+	resp, err := http.Post(fmt.Sprintf("http://localhost:%d/config/create", r.port), "application/json", requestBody)
 	if err != nil {
 		return fmt.Errorf("mounting failed:  err: %s", err)
 	}
@@ -147,7 +149,7 @@ func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPa
 		return fmt.Errorf("mounting failed: couldn't create request body: %s", err)
 	}
 	requestBody = bytes.NewBuffer(postBody)
-	resp, err = http.Post("http://localhost:5572/mount/mount", "application/json", requestBody)
+	resp, err = http.Post(fmt.Sprintf("http://localhost:%d/mount/mount", r.port), "application/json", requestBody)
 	if err != nil {
 		return fmt.Errorf("mounting failed:  err: %s", err)
 	}
@@ -207,7 +209,7 @@ func (r Rclone) Unmount(ctx context.Context, volumeId string, targetPath string)
 		return fmt.Errorf("unmounting failed: couldn't create request body: %s", err)
 	}
 	requestBody := bytes.NewBuffer(postBody)
-	resp, err := http.Post("http://localhost:5572/mount/unmount", "application/json", requestBody)
+	resp, err := http.Post(fmt.Sprintf("http://localhost:%d/mount/unmount", r.port), "application/json", requestBody)
 	if err != nil {
 		return fmt.Errorf("unmounting failed:  err: %s", err)
 	}
@@ -235,7 +237,7 @@ func (r Rclone) Unmount(ctx context.Context, volumeId string, targetPath string)
 		return fmt.Errorf("deleting config failed: couldn't create request body: %s", err)
 	}
 	requestBody = bytes.NewBuffer(postBody)
-	resp, err = http.Post("http://localhost:5572/config/delete", "application/json", requestBody)
+	resp, err = http.Post(fmt.Sprintf("http://localhost:%d/config/delete", r.port), "application/json", requestBody)
 	if err != nil {
 		klog.Errorf("deleting config failed:  err: %s", err)
 		return nil
@@ -300,20 +302,16 @@ func (r Rclone) GetVolumeById(ctx context.Context, volumeId string) (*RcloneVolu
 	return nil, ErrVolumeNotFound
 }
 
-func NewRclone(kubeClient *kubernetes.Clientset) Operations {
+func NewRclone(kubeClient *kubernetes.Clientset, port int) Operations {
 	rclone := &Rclone{
 		execute:    exec.New(),
 		kubeClient: kubeClient,
+		port:       port,
 	}
-	err := rclone.run_daemon()
-	if err != nil {
-		panic(fmt.Sprintf("couldn't start backround process: %s", err))
-	}
-
 	return rclone
 }
 
-func (r *Rclone) run_daemon() error {
+func (r *Rclone) start_daemon() error {
 	f, err := os.CreateTemp("", "rclone.conf")
 	if err != nil {
 		return err
@@ -321,7 +319,7 @@ func (r *Rclone) run_daemon() error {
 	rclone_cmd := "rclone"
 	rclone_args := []string{}
 	rclone_args = append(rclone_args, "rcd")
-	rclone_args = append(rclone_args, "--rc-addr=:5572")
+	rclone_args = append(rclone_args, fmt.Sprintf("--rc-addr=:%d", r.port))
 	rclone_args = append(rclone_args, "--cache-info-age=72h")
 	rclone_args = append(rclone_args, "--cache-chunk-clean-interval=15m")
 	rclone_args = append(rclone_args, "--rc-no-auth")
@@ -335,6 +333,7 @@ func (r *Rclone) run_daemon() error {
 
 	env := os.Environ()
 	cmd := os_exec.Command(rclone_cmd, rclone_args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	stdout, err := cmd.StdoutPipe()
 	cmd.Stderr = cmd.Stdout
 	if err != nil {
@@ -345,33 +344,32 @@ func (r *Rclone) run_daemon() error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	r.process = cmd.Process.Pid
 	go func() {
 		output := ""
 		for scanner.Scan() {
 			output = scanner.Text()
 			klog.Infof("rclone log: %s", output)
 		}
-		err := cmd.Wait()
-		if err != nil {
-			if exiterr, ok := err.(*os_exec.ExitError); ok {
-				if exiterr.ExitCode() == 130 {
-					return // 130 = SigInt, so normal shutdown
-				}
-			}
-			klog.Errorf("background process failed with: %s,%s", output, err)
-			panic(fmt.Sprintf("rclone background process failed: %s", err))
-		}
 	}()
+	r.daemonCmd = cmd
 	return nil
 }
-func (r *Rclone) Cleanup() {
-	klog.Info("cleaning up background process")
-	p, err := os.FindProcess(r.process)
+
+func (r *Rclone) Run() error {
+	err := r.start_daemon()	
 	if err != nil {
-		return
+		return err
 	}
-	p.Signal(syscall.SIGINT)
+	// blocks until the rclone daemon is stopped
+	return r.daemonCmd.Wait()
+}
+
+func (r *Rclone) Cleanup() error {
+	klog.Info("cleaning up background process")
+	if r.daemonCmd == nil {
+		return nil
+	}
+	return r.daemonCmd.Process.Kill()
 }
 
 func (r *Rclone) command(cmd, remote, remotePath string, flags map[string]string) error {

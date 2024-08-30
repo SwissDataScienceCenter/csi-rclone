@@ -32,11 +32,10 @@ func (cs *controllerServer) ValidateVolumeCapabilities(ctx context.Context, req 
 	}
 
 	cs.mutex.Lock()
+	defer cs.mutex.Unlock()
 	if _, ok := cs.active_volumes[volId]; !ok {
-		cs.mutex.Unlock()
 		return nil, status.Errorf(codes.NotFound, "Volume %s not found", volId)
 	}
-	cs.mutex.Unlock()
 	return &csi.ValidateVolumeCapabilitiesResponse{
 		Confirmed: &csi.ValidateVolumeCapabilitiesResponse_Confirmed{
 			VolumeContext:      req.VolumeContext,
@@ -75,7 +74,6 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 	cs.mutex.Lock()
 	defer cs.mutex.Unlock()
 	if val, ok := cs.active_volumes[volumeName]; ok && val != volSizeBytes {
-		cs.mutex.Unlock()
 		return nil, status.Errorf(codes.AlreadyExists, "Volume operation already exists for volume %s", volumeName)
 	}
 	cs.active_volumes[volumeName] = volSizeBytes
@@ -110,8 +108,8 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 		return nil, status.Error(codes.InvalidArgument, "DeteleVolume must be provided volume id")
 	}
 	cs.mutex.Lock()
+	defer cs.mutex.Unlock()
 	delete(cs.active_volumes, volId)
-	cs.mutex.Unlock()
 
 	return &csi.DeleteVolumeResponse{}, nil
 }

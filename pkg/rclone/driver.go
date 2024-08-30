@@ -1,6 +1,7 @@
 package rclone
 
 import (
+	"net"
 	"os"
 	"sync"
 
@@ -21,11 +22,24 @@ type Driver struct {
 	cap       []*csi.VolumeCapability_AccessMode
 	cscap     []*csi.ControllerServiceCapability
 	RcloneOps Operations
+	Server    csicommon.NonBlockingGRPCServer
 }
 
 var (
 	DriverVersion = "SwissDataScienceCenter"
 )
+
+func getFreePort() (port int, err error) {
+	var a *net.TCPAddr
+	if a, err = net.ResolveTCPAddr("tcp", "localhost:0"); err == nil {
+		var l *net.TCPListener
+		if l, err = net.ListenTCP("tcp", a); err == nil {
+			defer l.Close()
+			return l.Addr().(*net.TCPAddr).Port, nil
+		}
+	}
+	return
+}
 
 func NewDriver(nodeID, endpoint string, kubeClient *kubernetes.Clientset) *Driver {
 	driverName := os.Getenv("DRIVER_NAME")
@@ -36,7 +50,11 @@ func NewDriver(nodeID, endpoint string, kubeClient *kubernetes.Clientset) *Drive
 
 	d := &Driver{}
 	d.endpoint = endpoint
-	d.RcloneOps = NewRclone(kubeClient)
+	rclonePort, err := getFreePort()
+	if err != nil {
+		panic("Cannot get a free TCP port to run rclone")
+	}
+	d.RcloneOps = NewRclone(kubeClient, rclonePort)
 
 	d.csiDriver = csicommon.NewCSIDriver(driverName, DriverVersion, nodeID)
 	d.csiDriver.AddVolumeCapabilityAccessModes([]csi.VolumeCapability_AccessMode_Mode{
@@ -72,12 +90,27 @@ func NewControllerServer(d *Driver) *controllerServer {
 	}
 }
 
-func (d *Driver) Run() {
+func (d *Driver) Run() error {
 	s := csicommon.NewNonBlockingGRPCServer()
-	defer d.RcloneOps.Cleanup()
-	s.Start(d.endpoint,
+	s.Start(
+		d.endpoint,
 		csicommon.NewDefaultIdentityServer(d.csiDriver),
 		NewControllerServer(d),
-		NewNodeServer(d))
-	s.Wait()
+		NewNodeServer(d),
+	)
+	d.Server = s
+	go s.Wait()
+	err := d.RcloneOps.Run()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (d *Driver) Stop() error {
+	err := d.RcloneOps.Cleanup()
+	if d.Server != nil {
+		d.Server.Stop()
+	}
+	return err
 }

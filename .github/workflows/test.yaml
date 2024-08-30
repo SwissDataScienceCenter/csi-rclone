@@ -37,6 +37,7 @@ jobs:
             local-deploy
             get-kind-kubeconfig
             go test -v test/sanity_test.go
+            go test -v test/sanity_custom_secret_test.go
       - name: Print rclone log
         if: ${{ failure() }}
         run: cat /tmp/rclone.log
@@ -68,6 +69,7 @@ jobs:
             local-deploy
             get-kind-kubeconfig
             go test -v test/sanity_with_decrypt_test.go
+            go test -v test/sanity_with_decrypt_custom_secret_test.go
       - name: Print rclone log
         if: ${{ failure() }}
         run: cat /tmp/rclone.log

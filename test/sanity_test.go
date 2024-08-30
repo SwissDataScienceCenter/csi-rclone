@@ -12,7 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func TestMyDriver(t *testing.T) {
+func TestSanityLegacy(t *testing.T) {
 	// Setup the full driver and its environment
 	endpoint := "unix:///tmp/plugin/csi.sock"
 	kubeClient, err := kube.GetK8sClient()
@@ -22,6 +22,7 @@ func TestMyDriver(t *testing.T) {
 	os.Setenv("DRIVER_NAME", "csi-rclone")
 	driver := rclone.NewDriver("hostname", endpoint, kubeClient)
 	go driver.Run()
+	defer driver.Stop()
 	err = os.MkdirAll("/tmp/sanity/mount/", 0700)
 	if err != nil {
 		t.Fatal(err)
@@ -62,6 +63,7 @@ type=s3
 provider=AWS`},
 		Type: "Opaque",
 	}, metav1.CreateOptions{})
+	defer kubeClient.CoreV1().Secrets("csi-rclone").Delete(context.Background(), "test-pvc", metav1.DeleteOptions{})
 
 	cfg := sanity.NewTestConfig()
 	cfg.Address = endpoint
@@ -69,15 +71,9 @@ provider=AWS`},
 	cfg.TargetPath = mntDir
 	cfg.StagingPath = mntStageDir
 	cfg.Address = endpoint
-	// cfg.SecretsFile = "testdata/secrets.yaml"
 	cfg.TestVolumeParameters = map[string]string{
 		"csi.storage.k8s.io/pvc/namespace": "csi-rclone",
 		"csi.storage.k8s.io/pvc/name":      "test-pvc",
 	}
 	sanity.Test(t, cfg)
-
-	// sanity just completely kills the driver, leaking the rclone daemon, so we cleanup manually
-	driver.RcloneOps.Cleanup()
-
-	kubeClient.CoreV1().Secrets("csi-rclone").Delete(context.Background(), "test-pvc", metav1.DeleteOptions{})
 }

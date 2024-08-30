@@ -67,5 +67,8 @@ func handle() {
 		panic(err)
 	}
 	d := rclone.NewDriver(nodeID, endpoint, kubeClient)
-	d.Run()
+	err = d.Run()
+	if err != nil {
+		panic(err)
+	}
 }

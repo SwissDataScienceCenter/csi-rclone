@@ -16,6 +16,8 @@ kind: PersistentVolumeClaim
 metadata:
   name: csi-rclone-example
   namespace: csi-rclone-example
+  annotations:
+    csi-rclone.dev/secretName: csi-rclone-example-secret
 spec:
   accessModes:
       - ReadWriteMany
@@ -25,8 +27,8 @@ spec:
   storageClassName: csi-rclone
 ```
 
-The driver will look for and read a secret with the same name as the PVC in the same namespace
-as the PVC above and will use the configuration from the secret as well as any credentials.
+You have to provide a secret with the rclone configuration. The secret has to have a specific format explained below.
+The secret can be passed to the CSI driver via the annotation `csi-rclone.dev/secretName`.
 
 The secret requires the following fields:
 - `remote`: The name of the remote that should be mounted - has to match the section name in the `configData` field
@@ -38,7 +40,7 @@ The secret requires the following fields:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: csi-rclone-example
+  name: csi-rclone-example-secret
   namespace: csi-rclone-example
 type: Opaque
 stringData:
@@ -49,6 +51,30 @@ stringData:
     type = s3
     provider = AWS
 
+```
+
+### Skip provisioning and create PV directly
+
+This is more complicated but doable. Here you have to specify the secret name in the CSI parameters.
+Assuming that the secret that contains the configuration is called `csi-rclone-example-secret` and 
+is located in the namespace `csi-rclone-example-secret-namespace`, then the PV specification would look as follows.
+
+```yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: csi-rclone-pv-example
+spec:
+  accessModes:
+    - ReadWriteMany
+  capacity:
+    storage: 10Gi
+  csi:
+    driver: csi-rclone
+    volumeAttributes:
+      nodePublishSecretRef: csi-rclone-example-secret
+      nodePublisSecretRefNamespace: csi-rclone-example-secret-namespace
+  persistentVolumeReclaimPolicy: Delete
 ```
 
 ## Installation

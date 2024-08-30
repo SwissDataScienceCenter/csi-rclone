@@ -12,7 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func TestSanityWithDecryptLegacy(t *testing.T) {
+func TestSanityWithDecrypt(t *testing.T) {
 	// Setup the full driver and its environment
 	endpoint := "unix:///tmp/plugin/csi.sock"
 	kubeClient, err := kube.GetK8sClient()
@@ -48,7 +48,7 @@ func TestSanityWithDecryptLegacy(t *testing.T) {
 		t.Fatal(err)
 	}
 	os.Getwd()
-	os.RemoveAll(mntStageDir)
+os.RemoveAll(mntStageDir)
 	//defer os.RemoveAll(mntStageDir)
 
 	// create secret containing storage config for use in the test
@@ -76,13 +76,15 @@ provider=AWS`},
 
 	cfg := sanity.NewTestConfig()
 	cfg.Address = endpoint
-
+	cfg.SecretsFile = "testdata/secrets.yaml"
 	cfg.TargetPath = mntDir
 	cfg.StagingPath = mntStageDir
 	cfg.Address = endpoint
 	cfg.TestVolumeParameters = map[string]string{
-		"csi.storage.k8s.io/pvc/namespace": "csi-rclone",
-		"csi.storage.k8s.io/pvc/name":      "test-pvc",
+		"csi.storage.k8s.io/pvc/namespace":                 "csi-rclone",
+		"csi.storage.k8s.io/pvc/name":                      "some-pvc",
+		"csi.storage.k8s.io/node-publish-secret-name":      "test-pvc",
+		"csi.storage.k8s.io/node-publish-secret-namespace": "csi-rclone",
 	}
 	sanity.Test(t, cfg)
 }
