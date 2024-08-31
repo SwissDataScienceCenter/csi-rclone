@@ -11,7 +11,7 @@ Note that since the storage is backed by an existing cloud storage like S3 or so
 that is requested in the PVC below has no role at all and is completely ignored. It just has to be provided in the PVC specification.
 
 ```yaml
-piVersion: v1
+apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: csi-rclone-example
@@ -20,10 +20,10 @@ metadata:
     csi-rclone.dev/secretName: csi-rclone-example-secret
 spec:
   accessModes:
-      - ReadWriteMany
-    resources:
-      requests:
-        storage: 10Gi
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi
   storageClassName: csi-rclone
 ```
 
