@@ -2,13 +2,13 @@ storageClassName: csi-rclone
 csiControllerRclone:
   csiAttacher:
     image:
-      repository: k8s.gcr.io/sig-storage/csi-attacher
-      tag: v3.4.0
+      repository: registry.k8s.io/sig-storage/csi-attacher
+      tag: v4.7.0
     imagePullPolicy: IfNotPresent
   csiProvisioner:
     image:
       repository: registry.k8s.io/sig-storage/csi-provisioner
-      tag: v3.4.1
+      tag: v5.1.0
     imagePullPolicy: IfNotPresent
   rclone:
     image:
@@ -31,8 +31,8 @@ csiControllerRclone:
 csiNodepluginRclone:
   nodeDriverRegistrar:
     image:
-      repository: k8s.gcr.io/sig-storage/csi-node-driver-registrar
-      tag: v2.4.0
+      repository: registry.k8s.io/sig-storage/csi-node-driver-registrar
+      tag: v2.12.0
     imagePullPolicy: IfNotPresent
   rclone:
     containerSecurityContext:
