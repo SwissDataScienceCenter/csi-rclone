@@ -100,11 +100,7 @@ func (d *Driver) Run() error {
 	)
 	d.Server = s
 	go s.Wait()
-	err := d.RcloneOps.Run()
-	if err != nil {
-		return err
-	}
-	return nil
+	return d.RcloneOps.Run()
 }
 
 func (d *Driver) Stop() error {

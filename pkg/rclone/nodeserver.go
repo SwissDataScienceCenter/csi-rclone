@@ -73,7 +73,7 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 		}
 	}
 
-	// Regardless of whetehr the secret is passed via annotations or not we assume that the encrypted secret
+	// Regardless of whether the secret is passed via annotations or not we assume that the encrypted secret
 	// name is the PVC name or annotation value + "-secrets". There is no way for the user to pass this value
 	// to the CSI driver.
 	savedSecretName := secretName + "-secrets"
