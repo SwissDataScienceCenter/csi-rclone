@@ -23,11 +23,10 @@ jobs:
           DOCKER_PASSWORD: ${{ secrets.RENKU_DOCKER_PASSWORD }}
           GITHUB_TOKEN: ${{ secrets.RENKUBOT_GITHUB_TOKEN }}
         run: |
-          cd deploy
           git config --global user.email "renku@datascience.ch"
           git config --global user.name "Renku Bot"
           export TAG=$(echo ${GITHUB_REF} |cut -d/ -f3)
-          helm dep update csi-rclone
+          helm dep update deploy/csi-rclone
           chartpress --tag $TAG
-          helm lint csi-rclone
+          helm lint deploy/csi-rclone
           chartpress --tag $TAG --push --publish-chart
