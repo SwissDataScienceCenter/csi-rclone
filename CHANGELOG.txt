@@ -1,6 +1,10 @@
 Changelog
 =========
 
+Note: The changelog is not used anymore. Please see the releases on the github repository page
+at https://github.com/SwissDataScienceCenter/csi-rclone/releases to see all release notes and
+changelogs.
+
 v0.2.0
 ------
 
