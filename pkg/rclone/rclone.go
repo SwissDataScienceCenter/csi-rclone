@@ -98,6 +98,7 @@ func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPa
 		}
 		params[key] = sec.Key(key).String()
 	}
+	params["config_refresh_token"] = "false"
 	configOpts := ConfigCreateRequest{
 		Name:        configName,
 		StorageType: sec.Key("type").String(),
@@ -356,7 +357,7 @@ func (r *Rclone) start_daemon() error {
 }
 
 func (r *Rclone) Run() error {
-	err := r.start_daemon()	
+	err := r.start_daemon()
 	if err != nil {
 		return err
 	}
