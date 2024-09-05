@@ -58,8 +58,12 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 	volumeId := req.GetVolumeId()
 	volumeContext := req.GetVolumeContext()
 	readOnly := req.GetReadonly()
-	secretName := volumeContext["secretName"]
-	secretNamespace := volumeContext["secretNamespace"]
+	secretName, foundSecret := volumeContext["secretName"]
+	secretNamespace, foundSecretNamespace := volumeContext["secretNamespace"]
+
+	if !foundSecret || !foundSecretNamespace {
+		return nil, fmt.Errorf("Cannot find the 'secretName' and/or 'secretNamespace' fields in the volume context. If you are not using automated provisioning you have to specify these values manually in spec.csi.volumeAttributes in your PersistentVolume manifest. If you are using automated provisioning and these values are not found report this as a bug to the developers.")
+	}
 
 	// This is here for compatiblity reasons
 	// If the req.Secrets is empty it means that the old method of passing the secret is used

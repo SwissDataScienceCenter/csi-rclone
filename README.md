@@ -5,9 +5,12 @@ This project implements Container Storage Interface (CSI) plugin that allows usi
 
 ## Usage
 
-The easiest way to use this driver is to just create a Persistent Volume Claim (PVC) with the `csi-rclone`
-storage class. Or if you have modified the storage class name in the `values.yaml` file then use the name you have chosen.
-Note that since the storage is backed by an existing cloud storage like S3 or something similar the size 
+The easiest way to use this driver is to just create a Persistent Volume Claim (PVC) with the `csi-rclone-secret-annotation`
+storage class. Or if you have modified the storage class name in the `values.yaml` file then use the name you have chosen with 
+`-secret-annotation` added at the end of the name. The Helm chart creates 2 storage classes for compatibility reasons. The 
+storage class that matches the name in the values file will expect a secret that matches the PVC name to exist in the same namespace
+as the PVC. Whereas the storage class that has the suffix `-secret-annotation` will require the PVC to have the `csi-rclone.dev/secretName` annotation.
+Note that since the storage is backed by an existing cloud storage like S3 or something similar, the size 
 that is requested in the PVC below has no role at all and is completely ignored. It just has to be provided in the PVC specification.
 
 ```yaml
@@ -24,7 +27,7 @@ spec:
   resources:
     requests:
       storage: 10Gi
-  storageClassName: csi-rclone
+  storageClassName: csi-rclone-secret-annotation
 ```
 
 You have to provide a secret with the rclone configuration. The secret has to have a specific format explained below.
@@ -50,14 +53,13 @@ stringData:
     [giab]
     type = s3
     provider = AWS
-
 ```
 
 ### Skip provisioning and create PV directly
 
 This is more complicated but doable. Here you have to specify the secret name in the CSI parameters.
 Assuming that the secret that contains the configuration is called `csi-rclone-example-secret` and 
-is located in the namespace `csi-rclone-example-secret-namespace`, then the PV specification would look as follows.
+is located in the namespace `csi-rclone-example`, then the PV specification would look as follows.
 
 ```yaml
 apiVersion: v1
@@ -71,10 +73,30 @@ spec:
     storage: 10Gi
   csi:
     driver: csi-rclone
+    volumeHandle: csi-rclone-pv-example  # same as the PersistentVolumeName
+    # For the provisioning to fully work both fields are required even though they both refer to the same secret
+    nodePublishSecretRef:
+      name: csi-rclone-example-secret
+      namespace: csi-rclone-example
     volumeAttributes:
-      nodePublishSecretRef: csi-rclone-example-secret
-      nodePublisSecretRefNamespace: csi-rclone-example-secret-namespace
+      secretName: csi-rclone-example-secret
+      secretNamespace: csi-rclone-example
   persistentVolumeReclaimPolicy: Delete
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: test-pv-claim
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi
+  # If the storage class is not blank then you will get automatic provisioning and the PVC may not be bound
+  # to the selected volume.
+  storageClassName: ""
+  volumeName: "csi-rclone-pv-example"
 ```
 
 ## Installation

@@ -7,6 +7,16 @@ metadata:
 provisioner: {{ .Values.storageClassName }}
 volumeBindingMode: Immediate
 reclaimPolicy: Delete
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ .Values.storageClassName }}-secret-annotation
+  labels:
+  {{- include "chart.labels" . | nindent 4 }}
+provisioner: {{ .Values.storageClassName }}
+volumeBindingMode: Immediate
+reclaimPolicy: Delete
 parameters:
   # CreateVolumeRequest.secrets or DeleteVolumeRequest.secrets
   # If creating a PersistentVolume by hand then these are not needed, see below
