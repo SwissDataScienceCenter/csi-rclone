@@ -60,9 +60,13 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 	readOnly := req.GetReadonly()
 	secretName, foundSecret := volumeContext["secretName"]
 	secretNamespace, foundSecretNamespace := volumeContext["secretNamespace"]
+	// For backwards compatibility - prior to the change in #20 this field held the namespace
+	if !foundSecretNamespace {
+		secretNamespace, foundSecretNamespace = volumeContext["namespace"]
+	}
 
 	if !foundSecret || !foundSecretNamespace {
-		return nil, fmt.Errorf("Cannot find the 'secretName' and/or 'secretNamespace' fields in the volume context. If you are not using automated provisioning you have to specify these values manually in spec.csi.volumeAttributes in your PersistentVolume manifest. If you are using automated provisioning and these values are not found report this as a bug to the developers.")
+		return nil, fmt.Errorf("Cannot find the 'secretName', 'secretNamespace' and/or 'namespace' fields in the volume context. If you are not using automated provisioning you have to specify these values manually in spec.csi.volumeAttributes in your PersistentVolume manifest. If you are using automated provisioning and these values are not found report this as a bug to the developers.")
 	}
 
 	// This is here for compatiblity reasons
