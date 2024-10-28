@@ -162,6 +162,20 @@ func getSecret(ctx context.Context, namespace, name string) (*v1.Secret, error) 
 	return cs.CoreV1().Secrets(namespace).Get(ctx, name, metav1.GetOptions{})
 }
 
+func getPVC(ctx context.Context, namespace, name string) (*v1.PersistentVolumeClaim, error) {
+	cs, err := kube.GetK8sClient()
+	if err != nil {
+		return nil, err
+	}
+	if namespace == "" {
+		return nil, fmt.Errorf("Failed to read PVC with K8s client because namespace is blank")
+	}
+	if name == "" {
+		return nil, fmt.Errorf("Failed to read PVC with K8s client because name is blank")
+	}
+	return cs.CoreV1().PersistentVolumeClaims(namespace).Get(ctx, name, metav1.GetOptions{})
+}
+
 func validatePublishVolumeRequest(req *csi.NodePublishVolumeRequest) error {
 	if req.GetVolumeId() == "" {
 		return status.Error(codes.InvalidArgument, "empty volume id")
