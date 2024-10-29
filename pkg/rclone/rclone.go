@@ -333,7 +333,7 @@ func checkResponse(resp *http.Response) error {
 	if result.Error == "" {
 		return fmt.Errorf("unmarshalled the response from the server but it had nothing in the error field")
 	}
-	return fmt.Errorf("received error from the rclone server: %s", result.Error)
+	return fmt.Errorf("received error from the rclone server: %s", result.String())
 }
 
 func (r *Rclone) start_daemon() error {
