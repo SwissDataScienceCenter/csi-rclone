@@ -16,13 +16,12 @@ pkgs.mkShell {
     yazi # Filemanager
 
     # Go
-    go_1_20 # Go v1.20
+    go_1_23
     golangci-lint # Linter
     gopls # LSP
     gotools # Additional Tooling
     # VSCode GO: https://mgdm.net/weblog/vscode-nix-go-tools/
     go-outline
-    gocode
     gopkgs
     gocode-gomod
     godef
