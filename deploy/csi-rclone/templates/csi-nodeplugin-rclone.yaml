@@ -42,7 +42,8 @@ spec:
               - /bin/sh
               - -c
               - rm -rf /registration/{{ .Values.storageClassName }} /registration/{{ .Values.storageClassName }}-reg.sock
-        resources: {}
+        resources:
+          {{- toYaml .Values.csiNodepluginRclone.rclone.resources | nindent 12 }}
         volumeMounts:
         - mountPath: /plugin
           name: plugin-dir

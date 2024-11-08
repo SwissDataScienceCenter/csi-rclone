@@ -1,4 +1,4 @@
-storageClassName: csi-rclone 
+storageClassName: csi-rclone
 csiControllerRclone:
   csiAttacher:
     image:
@@ -26,7 +26,6 @@ csiControllerRclone:
   replicas: 1
   serviceAccount:
     annotations: {}
- 
 
 csiNodepluginRclone:
   nodeDriverRegistrar:
@@ -39,7 +38,7 @@ csiNodepluginRclone:
       allowPrivilegeEscalation: true
       capabilities:
         add:
-        - SYS_ADMIN
+          - SYS_ADMIN
       privileged: true
     image:
       repository: csi-rclone

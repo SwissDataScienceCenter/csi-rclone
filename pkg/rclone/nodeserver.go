@@ -60,9 +60,13 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 	readOnly := req.GetReadonly()
 	secretName, foundSecret := volumeContext["secretName"]
 	secretNamespace, foundSecretNamespace := volumeContext["secretNamespace"]
+	// For backwards compatibility - prior to the change in #20 this field held the namespace
+	if !foundSecretNamespace {
+		secretNamespace, foundSecretNamespace = volumeContext["namespace"]
+	}
 
 	if !foundSecret || !foundSecretNamespace {
-		return nil, fmt.Errorf("Cannot find the 'secretName' and/or 'secretNamespace' fields in the volume context. If you are not using automated provisioning you have to specify these values manually in spec.csi.volumeAttributes in your PersistentVolume manifest. If you are using automated provisioning and these values are not found report this as a bug to the developers.")
+		return nil, fmt.Errorf("Cannot find the 'secretName', 'secretNamespace' and/or 'namespace' fields in the volume context. If you are not using automated provisioning you have to specify these values manually in spec.csi.volumeAttributes in your PersistentVolume manifest. If you are using automated provisioning and these values are not found report this as a bug to the developers.")
 	}
 
 	// This is here for compatiblity reasons
@@ -156,6 +160,20 @@ func getSecret(ctx context.Context, namespace, name string) (*v1.Secret, error) 
 		return nil, fmt.Errorf("Failed to read Secret with K8s client because name is blank")
 	}
 	return cs.CoreV1().Secrets(namespace).Get(ctx, name, metav1.GetOptions{})
+}
+
+func getPVC(ctx context.Context, namespace, name string) (*v1.PersistentVolumeClaim, error) {
+	cs, err := kube.GetK8sClient()
+	if err != nil {
+		return nil, err
+	}
+	if namespace == "" {
+		return nil, fmt.Errorf("Failed to read PVC with K8s client because namespace is blank")
+	}
+	if name == "" {
+		return nil, fmt.Errorf("Failed to read PVC with K8s client because name is blank")
+	}
+	return cs.CoreV1().PersistentVolumeClaims(namespace).Get(ctx, name, metav1.GetOptions{})
 }
 
 func validatePublishVolumeRequest(req *csi.NodePublishVolumeRequest) error {

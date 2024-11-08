@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -170,12 +171,40 @@ provider=AWS`},
 			cfg.SecretsFile = "testdata/secrets.yaml"
 			cfg.TargetPath = mntDir
 			cfg.StagingPath = stageDir
+			kubeClient.CoreV1().Secrets("csi-rclone").Create(context.Background(), &v1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "pvc-secret", Namespace: "csi-rclone"},
+				StringData: map[string]string{
+					"remote":     "my-s3",
+					"remotePath": "giab/",
+					"secretKey":  "cw_0x689RpI-jtRR7oE8h_eQsKImvJapLeSbXpwF4e4=",
+					"configData": `[my-s3]
+type=<sensitive>
+provider=AWS`},
+				Type: "Opaque",
+			}, metav1.CreateOptions{})
+			className := "csi-rclone-secret-annotation"
+			kubeClient.CoreV1().PersistentVolumeClaims("csi-rclone").Create(context.Background(), &v1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "some-pvc", Namespace: "csi-rclone",
+					Annotations: map[string]string{"csi-rclone.dev/secretName": "pvc-secret"},
+				},
+				Spec: v1.PersistentVolumeClaimSpec{
+					AccessModes: []v1.PersistentVolumeAccessMode{v1.ReadWriteOnce},
+					Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{"storage": resource.MustParse("1Gi")},
+					},
+					StorageClassName: &className,
+				},
+			}, metav1.CreateOptions{})
 			cfg.TestVolumeParameters = map[string]string{
-				"csi.storage.k8s.io/pvc/namespace":                 "csi-rclone",
-				"csi.storage.k8s.io/pvc/name":                      "some-pvc",
-				"csi.storage.k8s.io/node-publish-secret-namespace": "csi-rclone",
-				"csi.storage.k8s.io/node-publish-secret-name":      "test-pvc",
+				"csi.storage.k8s.io/pvc/namespace": "csi-rclone",
+				"csi.storage.k8s.io/pvc/name":      "some-pvc",
 			}
+		})
+
+		AfterEach(func() {
+			kubeClient.CoreV1().Secrets("csi-rclone").Delete(context.Background(), "pvc-secret", metav1.DeleteOptions{})
+			kubeClient.CoreV1().PersistentVolumeClaims("csi-rclone").Delete(context.Background(), "some-pvc", metav1.DeleteOptions{})
 		})
 
 		AfterAll(func() {
@@ -194,9 +223,34 @@ provider=AWS`},
 		BeforeEach(func() {
 			mntDir, stageDir := getMountDirs()
 			kubeClient.CoreV1().Secrets("csi-rclone").Create(context.Background(), &v1.Secret{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-pvc-secrets", Namespace: "csi-rclone"},
+				ObjectMeta: metav1.ObjectMeta{Name: "pvc-secret", Namespace: "csi-rclone"},
+				StringData: map[string]string{
+					"remote":     "my-s3",
+					"remotePath": "giab/",
+					"secretKey":  "cw_0x689RpI-jtRR7oE8h_eQsKImvJapLeSbXpwF4e4=",
+					"configData": `[my-s3]
+type=<sensitive>
+provider=AWS`},
+				Type: "Opaque",
+			}, metav1.CreateOptions{})
+			kubeClient.CoreV1().Secrets("csi-rclone").Create(context.Background(), &v1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "pvc-secret-secrets", Namespace: "csi-rclone"},
 				StringData: map[string]string{"type": "gAAAAABK-fBwYcjuQgctfZknI2ko2uLqj6DRzRa7kFTKnWm_nkjwGWGTai5eyhNXlp6_6QjeTC7B8IWvhBsvG1Q6Zk2eDYDVQg=="},
 				Type:       "Opaque",
+			}, metav1.CreateOptions{})
+			className := "csi-rclone-secret-annotation"
+			kubeClient.CoreV1().PersistentVolumeClaims("csi-rclone").Create(context.Background(), &v1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "some-pvc", Namespace: "csi-rclone",
+					Annotations: map[string]string{"csi-rclone.dev/secretName": "pvc-secret"},
+				},
+				Spec: v1.PersistentVolumeClaimSpec{
+					AccessModes: []v1.PersistentVolumeAccessMode{v1.ReadWriteOnce},
+					Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{"storage": resource.MustParse("1Gi")},
+					},
+					StorageClassName: &className,
+				},
 			}, metav1.CreateOptions{})
 
 			*cfg = sanity.NewTestConfig()
@@ -205,15 +259,15 @@ provider=AWS`},
 			cfg.TargetPath = mntDir
 			cfg.StagingPath = stageDir
 			cfg.TestVolumeParameters = map[string]string{
-				"csi.storage.k8s.io/pvc/namespace":                 "csi-rclone",
-				"csi.storage.k8s.io/pvc/name":                      "some-pvc",
-				"csi.storage.k8s.io/node-publish-secret-namespace": "csi-rclone",
-				"csi.storage.k8s.io/node-publish-secret-name":      "test-pvc",
+				"csi.storage.k8s.io/pvc/namespace": "csi-rclone",
+				"csi.storage.k8s.io/pvc/name":      "some-pvc",
 			}
 		})
 
 		AfterEach(func() {
-			kubeClient.CoreV1().Secrets("csi-rclone").Delete(context.Background(), "test-pvc-secrets", metav1.DeleteOptions{})
+			kubeClient.CoreV1().Secrets("csi-rclone").Delete(context.Background(), "pvc-secret", metav1.DeleteOptions{})
+			kubeClient.CoreV1().Secrets("csi-rclone").Delete(context.Background(), "pvc-secret-secrets", metav1.DeleteOptions{})
+			kubeClient.CoreV1().PersistentVolumeClaims("csi-rclone").Delete(context.Background(), "some-pvc", metav1.DeleteOptions{})
 		})
 
 		AfterAll(func() {

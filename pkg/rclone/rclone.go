@@ -98,6 +98,7 @@ func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPa
 		}
 		params[key] = sec.Key(key).String()
 	}
+	params["config_refresh_token"] = "false"
 	configOpts := ConfigCreateRequest{
 		Name:        configName,
 		StorageType: sec.Key("type").String(),
@@ -112,14 +113,11 @@ func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPa
 	requestBody := bytes.NewBuffer(postBody)
 	resp, err := http.Post(fmt.Sprintf("http://localhost:%d/config/create", r.port), "application/json", requestBody)
 	if err != nil {
-		return fmt.Errorf("mounting failed:  err: %s", err)
+		return fmt.Errorf("mounting failed: couldn't send HTTP request to create config: %w", err)
 	}
-	if resp.StatusCode != 200 {
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return err
-		}
-		return fmt.Errorf("mounting failed: couldn't create config: %s", string(body))
+	err = checkResponse(resp)
+	if err != nil {
+		return fmt.Errorf("mounting failed: couldn't create config: %w", err)
 	}
 	klog.Infof("created config: %s", configName)
 
@@ -151,18 +149,13 @@ func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPa
 	requestBody = bytes.NewBuffer(postBody)
 	resp, err = http.Post(fmt.Sprintf("http://localhost:%d/mount/mount", r.port), "application/json", requestBody)
 	if err != nil {
-		return fmt.Errorf("mounting failed:  err: %s", err)
+		return fmt.Errorf("mounting failed: couldn't send HTTP request to create mount: %w", err)
 	}
-	if resp.StatusCode != 200 {
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return err
-		}
-		return fmt.Errorf("mounting failed: couldn't create mount: %s", string(body))
+	err = checkResponse(resp)
+	if err != nil {
+		return fmt.Errorf("mounting failed: couldn't create mount: %w", err)
 	}
 	klog.Infof("created mount: %s", configName)
-
-	defer resp.Body.Close()
 
 	return nil
 }
@@ -211,23 +204,13 @@ func (r Rclone) Unmount(ctx context.Context, volumeId string, targetPath string)
 	requestBody := bytes.NewBuffer(postBody)
 	resp, err := http.Post(fmt.Sprintf("http://localhost:%d/mount/unmount", r.port), "application/json", requestBody)
 	if err != nil {
-		return fmt.Errorf("unmounting failed:  err: %s", err)
+		return fmt.Errorf("unmounting failed: couldn't send HTTP request: %w", err)
 	}
-	body, err := io.ReadAll(resp.Body)
+	err = checkResponse(resp)
 	if err != nil {
-		return err
+		return fmt.Errorf("unmounting failed: %w", err)
 	}
-	if resp.StatusCode != 200 {
-		var result map[string]interface{}
-		json.Unmarshal(body, &result)
-		errorMsg, found := result["error"]
-		if !found || errorMsg != "mount not found" {
-			// if the mount errored out, we'd get mount not found and want to continue
-			klog.Errorf("unmounting failed: couldn't delete mount: %s", string(body))
-		}
-	}
-	klog.Infof("deleted mount: %s", string(body))
-	defer resp.Body.Close()
+	klog.Infof("deleted mount with volume ID %s at path %s", volumeId, targetPath)
 
 	configDelete := ConfigDeleteRequest{
 		Name: rcloneVolume.deploymentName(),
@@ -239,18 +222,15 @@ func (r Rclone) Unmount(ctx context.Context, volumeId string, targetPath string)
 	requestBody = bytes.NewBuffer(postBody)
 	resp, err = http.Post(fmt.Sprintf("http://localhost:%d/config/delete", r.port), "application/json", requestBody)
 	if err != nil {
-		klog.Errorf("deleting config failed:  err: %s", err)
+		klog.Errorf("deleting config failed: couldn't send HTTP request: %v", err)
 		return nil
 	}
-	body, err = io.ReadAll(resp.Body)
+	err = checkResponse(resp)
 	if err != nil {
-		return err
+		klog.Errorf("deleting config failed: %v", err)
+		return nil
 	}
-	if resp.StatusCode != 200 {
-		//don't error here so storage can be successfully unmounted
-		klog.Errorf("deleting config failed: couldn't delete mount: %s", string(body))
-	}
-	klog.Infof("deleted config: %s", string(body))
+	klog.Infof("deleted config for volume ID %s at path %s", volumeId, targetPath)
 
 	return nil
 }
@@ -311,6 +291,51 @@ func NewRclone(kubeClient *kubernetes.Clientset, port int) Operations {
 	return rclone
 }
 
+// Format from https://rclone.org/rc/#error-returns
+type serverErrorResponse struct {
+	Error  string          `json:"error"`
+	Path   string          `json:"path"`
+	input  json.RawMessage // can contain sensitive info in plain text
+	status int             // same as the http status code
+}
+
+func (s serverErrorResponse) String() string {
+	return fmt.Sprintf(
+		"{%q: %q, %q: %q, %q: %q, %q: %d}",
+		"error",
+		s.Error,
+		"path",
+		s.Path,
+		"input",
+		"<redacted>",
+		"status",
+		s.status,
+	)
+}
+
+func checkResponse(resp *http.Response) error {
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		// everything is ok with the response, there should be no error
+		return nil
+	}
+	body, err := io.ReadAll(resp.Body)
+	defer resp.Body.Close()
+	if err != nil {
+		// NOTE: do not wrap the error in case it contains sensitive information from the body
+		return fmt.Errorf("could not read the error response body from the rclone server")
+	}
+	var result serverErrorResponse
+	err = json.Unmarshal(body, &result)
+	if err != nil {
+		// NOTE: do not wrap the error in case it contains sensitive information from the body
+		return fmt.Errorf("could not unmarshal the error response from the rclone server")
+	}
+	if result.Error == "" {
+		return fmt.Errorf("unmarshalled the response from the server but it had nothing in the error field")
+	}
+	return fmt.Errorf("received error from the rclone server: %s", result.String())
+}
+
 func (r *Rclone) start_daemon() error {
 	f, err := os.CreateTemp("", "rclone.conf")
 	if err != nil {
@@ -356,7 +381,7 @@ func (r *Rclone) start_daemon() error {
 }
 
 func (r *Rclone) Run() error {
-	err := r.start_daemon()	
+	err := r.start_daemon()
 	if err != nil {
 		return err
 	}

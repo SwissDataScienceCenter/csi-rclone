@@ -15,6 +15,8 @@ import (
 	csicommon "github.com/kubernetes-csi/drivers/pkg/csi-common"
 )
 
+const secretAnnotationName = "csi-rclone.dev/secretName"
+
 type controllerServer struct {
 	*csicommon.DefaultControllerServer
 	RcloneOps      Operations
@@ -80,21 +82,34 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 
 	// See https://github.com/kubernetes-csi/external-provisioner/blob/v5.1.0/pkg/controller/controller.go#L75
 	// on how parameters from the persistent volume are parsed
-	// We have to pass these into the context so that the node server can use them
-	secretName, nameFound := req.Parameters["csi.storage.k8s.io/provisioner-secret-name"]
-	secretNs, nsFound := req.Parameters["csi.storage.k8s.io/provisioner-secret-namespace"]
+	// We have to pass the secret name and namespace into the context so that the node server can use them
+	// The external provisioner uses the secret name and namespace but it does not pass them into the request,
+	// so we read the PVC here to extract them ourselves because we may need them in the node server for decoding secrets.
+	pvcName, pvcNameFound := req.Parameters["csi.storage.k8s.io/pvc/name"]
+	pvcNamespace, pvcNamespaceFound := req.Parameters["csi.storage.k8s.io/pvc/namespace"]
+	if !pvcNameFound || !pvcNamespaceFound {
+		return nil, status.Error(codes.FailedPrecondition, "The PVC name and/or namespace are not present in the create volume request parameters.")
+	}
 	volumeContext := map[string]string{}
-	if nameFound && nsFound {
+	if len(req.GetSecrets()) > 0 {
+		pvc, err := getPVC(ctx, pvcNamespace, pvcName)
+		if err != nil {
+			return nil, err
+		}
+		secretName, secretNameFound := pvc.Annotations[secretAnnotationName]
+		if !secretNameFound {
+			return nil, status.Error(codes.FailedPrecondition, "The secret name is not present in the PVC annotations.")
+		}
 		volumeContext["secretName"] = secretName
-		volumeContext["secretNamespace"] = secretNs
+		volumeContext["secretNamespace"] = pvcNamespace
 	} else {
 		// This is here for compatibility reasons before this update the secret name was equal to the PVC
-		volumeContext["secretName"] = req.Parameters["csi.storage.k8s.io/pvc/name"]
-		volumeContext["secretNamespace"] = req.Parameters["csi.storage.k8s.io/pvc/namespace"]
+		volumeContext["secretName"] = pvcName
+		volumeContext["secretNamespace"] = pvcNamespace
 	}
 	return &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
-			VolumeId: volumeName,
+			VolumeId:      volumeName,
 			VolumeContext: volumeContext,
 		},
 	}, nil
