@@ -11,8 +11,11 @@ import (
 	"k8s.io/klog"
 	"k8s.io/utils/mount"
 
+	mountUtils "k8s.io/mount-utils"
 	utilexec "k8s.io/utils/exec"
 )
+
+const rcloneMountType = "fuse.rclone"
 
 type Driver struct {
 	csiDriver *csicommon.CSIDriver
@@ -91,6 +94,7 @@ func NewControllerServer(d *Driver) *controllerServer {
 }
 
 func (d *Driver) Run() error {
+	unmountExiting()
 	s := csicommon.NewNonBlockingGRPCServer()
 	s.Start(
 		d.endpoint,
@@ -109,4 +113,24 @@ func (d *Driver) Stop() error {
 		d.Server.Stop()
 	}
 	return err
+}
+
+func unmountExiting() {
+	klog.Info("Checking for existing rclone mounts to unmount")
+	// NOTE: A blank mounter path means use the default of /bin/mount
+	mounter := mountUtils.New("")
+	mounts, err := mounter.List()
+	if err != nil {
+		klog.Warningf("Could not list mounts when trying to unmount exising mounts: %v", err)
+		return
+	}
+	for _, mount := range mounts {
+		if mount.Type == rcloneMountType {
+			klog.Infof("Unmounting old rclone mount at %s", mount.Path)
+			err = mounter.Unmount(mount.Path)
+			if err != nil {
+				klog.Warningf("Could not unmount rclone mount at %s because of %v", mount.Path, err)
+			}
+		}
+	}
 }
