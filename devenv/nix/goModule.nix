@@ -1,11 +1,11 @@
-{ pkgs}:
+{ pkgs }:
 
 let
   csiDriver = pkgs.buildGoModule {
     pname = "csi-rclone-pvc-1";
     version = "0.2.0";
     src = ../../.;
-    vendorHash = "sha256-q1tfnO5B6U9c+Ve+kpOfnWGvbdShgkPXvR7axsA7O5Y=";
+    vendorHash = "sha256-kSSPjuiBYAlpFFdFwA0/v1nuSftyfIaV8R/x1yAc1ac=";
     # CGO = 0;
     # preBuild = ''
     #   whoami
