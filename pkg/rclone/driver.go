@@ -94,7 +94,7 @@ func NewControllerServer(d *Driver) *controllerServer {
 }
 
 func (d *Driver) Run() error {
-	unmountExiting()
+	unmountExisting()
 	s := csicommon.NewNonBlockingGRPCServer()
 	s.Start(
 		d.endpoint,
@@ -115,13 +115,13 @@ func (d *Driver) Stop() error {
 	return err
 }
 
-func unmountExiting() {
+func unmountExisting() {
 	klog.Info("Checking for existing rclone mounts to unmount")
 	// NOTE: A blank mounter path means use the default of /bin/mount
 	mounter := mountUtils.New("")
 	mounts, err := mounter.List()
 	if err != nil {
-		klog.Warningf("Could not list mounts when trying to unmount exising mounts: %v", err)
+		klog.Warningf("Could not list mounts when trying to unmount existing mounts: %v", err)
 		return
 	}
 	for _, mount := range mounts {
