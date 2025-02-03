@@ -51,7 +51,7 @@ spec:
           name: registration-dir
       - name: liveness-probe
         imagePullPolicy: Always
-        image: registry.k8s.io/sig-storage/livenessprobe:v2.11.0
+        image: registry.k8s.io/sig-storage/livenessprobe:v2.15.0
         args:
         - --csi-address=/plugin/csi.sock
         volumeMounts:
