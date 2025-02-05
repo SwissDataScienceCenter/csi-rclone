@@ -322,7 +322,6 @@ func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 
 	if err := ns.RcloneOps.Unmount(ctx, req.GetVolumeId(), targetPath); err != nil {
 		klog.Warningf("Unmounting volume failed: %s", err)
-		return nil, status.Error(codes.Internal, err.Error())
 	}
 	mount.CleanupMountPoint(req.GetTargetPath(), ns.mounter, false)
 	return &csi.NodeUnpublishVolumeResponse{}, nil

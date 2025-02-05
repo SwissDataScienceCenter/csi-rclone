@@ -83,7 +83,12 @@ func handleNode() {
 		klog.Warningf("There was an error when trying to unmount old volumes: %e", err)
 	}
 	d := rclone.NewDriver(nodeID, endpoint)
-	err = d.RunNodeService()
+	ns, err := rclone.NewNodeServer(d.CSIDriver)
+	if err != nil {
+		panic(err)
+	}
+	d.WithNodeServer(ns)
+	err = d.Run()
 	if err != nil {
 		panic(err)
 	}
@@ -91,7 +96,9 @@ func handleNode() {
 
 func handleController() {
 	d := rclone.NewDriver(nodeID, endpoint)
-	err := d.RunControllerService()
+	cs := rclone.NewControllerServer(d.CSIDriver)
+	d.WithControllerServer(cs)
+	err := d.Run()
 	if err != nil {
 		panic(err)
 	}
