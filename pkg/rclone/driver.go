@@ -63,27 +63,6 @@ func NewDriver(nodeID, endpoint string) *Driver {
 	return d
 }
 
-func newNodeServer(d *Driver, rcloneOps Operations) *nodeServer {
-	return &nodeServer{
-		// Creating and passing the NewDefaultNodeServer is useless and unecessary
-		DefaultNodeServer: csicommon.NewDefaultNodeServer(d.csiDriver),
-		mounter: &mount.SafeFormatAndMount{
-			Interface: mount.New(""),
-			Exec:      utilexec.New(),
-		},
-		RcloneOps: rcloneOps,
-	}
-}
-
-func newControllerServer(d *Driver) *controllerServer {
-	return &controllerServer{
-		// Creating and passing the NewDefaultControllerServer is useless and unecessary
-		DefaultControllerServer: csicommon.NewDefaultControllerServer(d.csiDriver),
-		active_volumes:          map[string]int64{},
-		mutex:                   sync.RWMutex{},
-	}
-}
-
 func (d *Driver) RunNodeService() error {
 	kubeClient, err := kube.GetK8sClient()
 	if err != nil {
@@ -97,7 +76,14 @@ func (d *Driver) RunNodeService() error {
 	rcloneOps := NewRclone(kubeClient, rclonePort)
 
 	s := csicommon.NewNonBlockingGRPCServer()
-	ns := newNodeServer(d, rcloneOps)
+	ns := &nodeServer{
+		DefaultNodeServer: csicommon.NewDefaultNodeServer(d.csiDriver),
+		mounter: &mount.SafeFormatAndMount{
+			Interface: mount.New(""),
+			Exec:      utilexec.New(),
+		},
+		RcloneOps: rcloneOps,
+	}
 	s.Start(
 		d.endpoint,
 		csicommon.NewDefaultIdentityServer(d.csiDriver),
@@ -115,10 +101,15 @@ func (d *Driver) RunControllerService() error {
 	s.Start(
 		d.endpoint,
 		csicommon.NewDefaultIdentityServer(d.csiDriver),
-		newControllerServer(d),
+		&controllerServer{
+			DefaultControllerServer: csicommon.NewDefaultControllerServer(d.csiDriver),
+			active_volumes:          map[string]int64{},
+			mutex:                   sync.RWMutex{},
+		},
 		nil,
 	)
 	d.Server = s
+	s.Wait()
 	return nil
 }
 
