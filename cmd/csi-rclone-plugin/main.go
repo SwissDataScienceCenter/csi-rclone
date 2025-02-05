@@ -6,7 +6,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/SwissDataScienceCenter/csi-rclone/pkg/kube"
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/rclone"
 	"github.com/spf13/cobra"
 	"k8s.io/klog"
@@ -24,7 +23,7 @@ func init() {
 
 func main() {
 
-	cmd := &cobra.Command{
+	root := &cobra.Command{
 		Use:   "rclone",
 		Short: "CSI based rclone driver",
 	}
@@ -32,31 +31,45 @@ func main() {
 	runCmd := &cobra.Command{
 		Use:   "run",
 		Short: "Start the CSI driver.",
+	}
+	root.AddCommand(runCmd)
+
+	runNode := &cobra.Command{
+		Use:   "node",
+		Short: "Start the CSI driver node service - exepcted to run in a daemonset on every node.",
 		Run: func(cmd *cobra.Command, args []string) {
-			handle()
+			handleNode()
 		},
 	}
-	cmd.AddCommand(runCmd)
-
-	runCmd.PersistentFlags().StringVar(&nodeID, "nodeid", "", "node id")
-	runCmd.MarkPersistentFlagRequired("nodeid")
-
-	runCmd.PersistentFlags().StringVar(&endpoint, "endpoint", "", "CSI endpoint")
-	runCmd.MarkPersistentFlagRequired("endpoint")
+	runNode.PersistentFlags().StringVar(&nodeID, "nodeid", "", "node id")
+	runNode.MarkPersistentFlagRequired("nodeid")
+	runNode.PersistentFlags().StringVar(&endpoint, "endpoint", "", "CSI endpoint")
+	runNode.MarkPersistentFlagRequired("endpoint")
+	runCmd.AddCommand(runNode)
+	runController := &cobra.Command{
+		Use:   "controller",
+		Short: "Start the CSI driver controller.",
+		Run: func(cmd *cobra.Command, args []string) {
+			handleController()
+		},
+	}
+	runController.PersistentFlags().StringVar(&nodeID, "nodeid", "", "node id")
+	runController.MarkPersistentFlagRequired("nodeid")
+	runController.PersistentFlags().StringVar(&endpoint, "endpoint", "", "CSI endpoint")
+	runController.MarkPersistentFlagRequired("endpoint")
+	runCmd.AddCommand(runController)
 
 	versionCmd := &cobra.Command{
 		Use:   "version",
 		Short: "Prints information about this version of csi rclone plugin",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf(`csi-rclone plugin
-Version:    %s
-`, rclone.DriverVersion)
+			fmt.Printf("csi-rclone plugin Version: %s", rclone.DriverVersion)
 		},
 	}
-	cmd.AddCommand(versionCmd)
+	root.AddCommand(versionCmd)
 
-	cmd.ParseFlags(os.Args[1:])
-	if err := cmd.Execute(); err != nil {
+	root.ParseFlags(os.Args[1:])
+	if err := root.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "%s", err.Error())
 		os.Exit(1)
 	}
@@ -64,26 +77,30 @@ Version:    %s
 	os.Exit(0)
 }
 
-func handle() {
-	kubeClient, err := kube.GetK8sClient()
-	if err != nil {
-		panic(err)
-	}
-	err = unmountOldVols()
+func handleNode() {
+	err := unmountOldVols()
 	if err != nil {
 		klog.Warningf("There was an error when trying to unmount old volumes: %e", err)
 	}
-	d := rclone.NewDriver(nodeID, endpoint, kubeClient)
-	err = d.Run()
+	d := rclone.NewDriver(nodeID, endpoint)
+	err = d.RunNodeService()
 	if err != nil {
 		panic(err)
 	}
 }
 
-const mountType = "fuse.rclone"
-const unmountTimeout = time.Second * 5
+func handleController() {
+	d := rclone.NewDriver(nodeID, endpoint)
+	err := d.RunControllerService()
+	if err != nil {
+		panic(err)
+	}
+}
 
+// unmountOldVols is used to unmount volumes after a restart on a node
 func unmountOldVols() error {
+	const mountType = "fuse.rclone"
+	const unmountTimeout = time.Second * 5
 	klog.Info("Checking for existing mounts")
 	mounter := mountUtils.Mounter{}
 	mounts, err := mounter.List()

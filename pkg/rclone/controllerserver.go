@@ -3,7 +3,6 @@
 package rclone
 
 import (
-	"os"
 	"sync"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -19,7 +18,6 @@ const secretAnnotationName = "csi-rclone.dev/secretName"
 
 type controllerServer struct {
 	*csicommon.DefaultControllerServer
-	RcloneOps      Operations
 	active_volumes map[string]int64
 	mutex          sync.RWMutex
 }
@@ -141,20 +139,4 @@ func (cs *controllerServer) ControllerGetVolume(ctx context.Context, req *csi.Co
 
 func (cs *controllerServer) ControllerModifyVolume(ctx context.Context, req *csi.ControllerModifyVolumeRequest) (*csi.ControllerModifyVolumeResponse, error) {
 	return &csi.ControllerModifyVolumeResponse{}, nil
-}
-
-func saveRcloneConf(configData string) (string, error) {
-	rcloneConf, err := os.CreateTemp("", "rclone.conf")
-	if err != nil {
-		return "", err
-	}
-
-	if _, err = rcloneConf.Write([]byte(configData)); err != nil {
-		return "", err
-	}
-
-	if err = rcloneConf.Close(); err != nil {
-		return "", err
-	}
-	return rcloneConf.Name(), nil
 }

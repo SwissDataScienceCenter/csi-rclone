@@ -55,10 +55,15 @@ var _ = Describe("Sanity CSI checks", Ordered, func() {
 		kubeClient, err = kube.GetK8sClient()
 		Expect(err).ShouldNot(HaveOccurred())
 		os.Setenv("DRIVER_NAME", "csi-rclone")
-		driver = rclone.NewDriver("hostname", endpoint, kubeClient)
+		driver = rclone.NewDriver("hostname", endpoint)
 		go func() {
 			defer GinkgoRecover()
-			err := driver.Run()
+			err := driver.RunNodeService()
+			Expect(err).ShouldNot(HaveOccurred())
+		}()
+		go func() {
+			defer GinkgoRecover()
+			err := driver.RunControllerService()
 			Expect(err).ShouldNot(HaveOccurred())
 		}()
 		_, err = utils.Connect(endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
