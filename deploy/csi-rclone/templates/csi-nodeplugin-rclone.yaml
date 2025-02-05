@@ -77,14 +77,6 @@ spec:
           value: {{ .Values.logLevel | default "NOTICE" | quote }}
         image: {{ .Values.csiNodepluginRclone.rclone.image.repository }}:{{ .Values.csiNodepluginRclone.rclone.image.tag | default .Chart.AppVersion }}
         imagePullPolicy: {{ .Values.csiNodepluginRclone.rclone.imagePullPolicy }}
-        # TODO: check if necessary
-        lifecycle:
-          postStart:
-            exec:
-              command:
-              - /bin/sh
-              - -c
-              - mount -t fuse.rclone | while read -r mount; do umount $(echo $mount | awk {print $3}) ; done
         resources:
           {{- toYaml .Values.csiControllerRclone.rclone.resources | nindent 12 }}
         securityContext: {{- toYaml .Values.csiNodepluginRclone.rclone.containerSecurityContext
