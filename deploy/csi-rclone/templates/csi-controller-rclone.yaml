@@ -59,6 +59,7 @@ spec:
       - name: rclone
         args:
         - run
+        - controller
         - --nodeid=$(NODE_ID)
         - --endpoint=$(CSI_ENDPOINT)
         env:
@@ -93,7 +94,7 @@ spec:
           name: socket-dir
       - name: liveness-probe
         imagePullPolicy: Always
-        image: registry.k8s.io/sig-storage/livenessprobe:v2.11.0
+        image: registry.k8s.io/sig-storage/livenessprobe:v2.15.0
         args:
         - --csi-address=/csi/csi.sock
         volumeMounts:

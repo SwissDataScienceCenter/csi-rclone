@@ -60,6 +60,7 @@ spec:
       - name: rclone
         args:
         - run
+        - node
         - --nodeid=$(NODE_ID)
         - --endpoint=$(CSI_ENDPOINT)
         env:
