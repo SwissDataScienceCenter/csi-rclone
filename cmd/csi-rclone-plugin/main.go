@@ -4,10 +4,13 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/kube"
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/rclone"
 	"github.com/spf13/cobra"
+	"k8s.io/klog"
+	mountUtils "k8s.io/mount-utils"
 )
 
 var (
@@ -66,9 +69,37 @@ func handle() {
 	if err != nil {
 		panic(err)
 	}
+	err = unmountOldVols()
+	if err != nil {
+		klog.Warningf("There was an error when trying to unmount old volumes: %e", err)
+	}
 	d := rclone.NewDriver(nodeID, endpoint, kubeClient)
 	err = d.Run()
 	if err != nil {
 		panic(err)
 	}
+}
+
+const mountType = "fuse.rclone"
+const unmountTimeout = time.Second * 5
+
+func unmountOldVols() error {
+	klog.Info("Checking for existing mounts")
+	mounter := mountUtils.Mounter{}
+	mounts, err := mounter.List()
+	if err != nil {
+		return err
+	}
+	for _, mount := range mounts {
+		if mount.Type != mountType {
+			continue
+		}
+		err := mounter.UnmountWithForce(mount.Path, unmountTimeout)
+		if err != nil {
+			klog.Warningf("Failed to unmount %s because of %e, will try to unmount with force.", mount.Path, err)
+			continue
+		}
+		klog.Infof("Sucessfully unmounted %s", mount.Path)
+	}
+	return nil
 }
