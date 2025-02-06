@@ -36,7 +36,7 @@ func main() {
 
 	runNode := &cobra.Command{
 		Use:   "node",
-		Short: "Start the CSI driver node service - exepcted to run in a daemonset on every node.",
+		Short: "Start the CSI driver node service - expected to run in a daemonset on every node.",
 		Run: func(cmd *cobra.Command, args []string) {
 			handleNode()
 		},
@@ -80,7 +80,7 @@ func main() {
 func handleNode() {
 	err := unmountOldVols()
 	if err != nil {
-		klog.Warningf("There was an error when trying to unmount old volumes: %e", err)
+		klog.Warningf("There was an error when trying to unmount old volumes: %v", err)
 	}
 	d := rclone.NewDriver(nodeID, endpoint)
 	ns, err := rclone.NewNodeServer(d.CSIDriver)
@@ -120,7 +120,7 @@ func unmountOldVols() error {
 		}
 		err := mounter.UnmountWithForce(mount.Path, unmountTimeout)
 		if err != nil {
-			klog.Warningf("Failed to unmount %s because of %e, will try to unmount with force.", mount.Path, err)
+			klog.Warningf("Failed to unmount %s because of %v.", mount.Path, err)
 			continue
 		}
 		klog.Infof("Sucessfully unmounted %s", mount.Path)
