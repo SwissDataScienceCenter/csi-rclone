@@ -2,13 +2,13 @@ FROM golang:1.23.0-bookworm AS build
 # ARG RCLONE_VERSION=v1.65.2
 # ARG RCLONE_ARCH=amd64
 # ARG RCLONE_OS=linux
-ARG RCLONE_DOWNLOAD_URL=""
+ARG RCLONE_DOWNLOAD_URL="https://github.com/SwissDataScienceCenter/rclone/releases/download/v1.65.2-exp-doi-zenodo/rclone-v1.65.3-exp-doi-zenodo-linux-amd64.zip"
 COPY go.mod go.sum ./
 COPY cmd/ ./cmd/
 COPY pkg/ ./pkg/
 RUN go build -o /csi-rclone cmd/csi-rclone-plugin/main.go
 RUN apt-get update && apt-get install -y unzip && \
-    curl "${RCLONE_DOWNLOAD_URL}" -o rclone.zip && \
+    curl "${RCLONE_DOWNLOAD_URL}" -Lo rclone.zip && \
 	unzip rclone.zip -d /rclone-unzip && \
 	chmod a+x /rclone-unzip/*/rclone && \
 	mv /rclone-unzip/*/rclone /
