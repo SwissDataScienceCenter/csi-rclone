@@ -1,16 +1,23 @@
+ARG RCLONE_IMAGE_REPOSITORY="ghcr.io/swissdatasciencecenter/rclone"
+ARG RCLONE_IMAGE_TAG="sha-316bdfc"
+FROM ${RCLONE_IMAGE_REPOSITORY}:${RCLONE_IMAGE_TAG} AS rclone
+
 FROM golang:1.23.0-bookworm AS build
-ARG RCLONE_VERSION=v1.65.2
-ARG RCLONE_ARCH=amd64
-ARG RCLONE_OS=linux
+# ARG RCLONE_VERSION=v1.65.2
+# ARG RCLONE_ARCH=amd64
+# ARG RCLONE_OS=linux
+# ARG RCLONE_DOWNLOAD_URL="https://github.com/SwissDataScienceCenter/rclone/releases/download/v1.65.2-exp-doi-zenodo/rclone-v1.65.3-exp-doi-zenodo-a3-linux-amd64.zip"
 COPY go.mod go.sum ./
 COPY cmd/ ./cmd/
 COPY pkg/ ./pkg/
 RUN go build -o /csi-rclone cmd/csi-rclone-plugin/main.go
-RUN apt-get update && apt-get install -y unzip && \
-    curl https://downloads.rclone.org/${RCLONE_VERSION}/rclone-${RCLONE_VERSION}-${RCLONE_OS}-${RCLONE_ARCH}.zip -o rclone.zip && \
-	unzip rclone.zip -d /rclone-unzip && \
-	chmod a+x /rclone-unzip/*/rclone && \
-	mv /rclone-unzip/*/rclone /
+COPY --from=rclone /rclone /rclone
+RUN chmod a+x /rclone
+# RUN apt-get update && apt-get install -y unzip && \
+#     curl "${RCLONE_DOWNLOAD_URL}" -Lo rclone.zip && \
+# 	unzip rclone.zip -d /rclone-unzip && \
+# 	chmod a+x /rclone-unzip/*/rclone && \
+# 	mv /rclone-unzip/*/rclone /
 
 FROM debian:bookworm-slim
 # NOTE: the rclone needs ca-certificates and fuse3 to successfully mount cloud storage 
