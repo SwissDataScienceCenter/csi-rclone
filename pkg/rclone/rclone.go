@@ -98,10 +98,19 @@ func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPa
 		}
 		params[key] = sec.Key(key).String()
 	}
+
+	// Configure proxy for remotes of type DOI
+	storageType := sec.Key("type").String()
+	if storageType == "doi" {
+		klog.Infof("doi type detected: %s", configName)
+		params["proxy_url"] = "http://squid:3128"
+		// params["proxy_ca_cert"] = ""
+	}
+
 	params["config_refresh_token"] = "false"
 	configOpts := ConfigCreateRequest{
 		Name:        configName,
-		StorageType: sec.Key("type").String(),
+		StorageType: storageType,
 		Parameters:  params,
 		Opt:         map[string]interface{}{"obscure": true},
 	}
