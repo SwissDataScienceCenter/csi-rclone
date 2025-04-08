@@ -100,6 +100,10 @@ spec:
         - mountPath: /var/lib/kubelet/pods
           mountPropagation: Bidirectional
           name: pods-mount-dir
+        - name: squid-cert
+          mountPath: /etc/squid/tls.crt
+          readOnly: true
+          subPath: tls.crt
     {{- with .Values.csiNodepluginRclone.nodeSelector }}
       nodeSelector:
         {{ toYaml . | nindent 8 }}
@@ -125,3 +129,10 @@ spec:
           path: {{ .Values.kubeletDir }}/plugins_registry
           type: DirectoryOrCreate
         name: registration-dir
+      - name: squid-cert
+        secret:
+          secretName: renku-squid-cert-tls
+          defaultMode: 0444
+          items:
+            - key: tls.crt
+              path: tls.crt

@@ -12,11 +12,10 @@ csiControllerRclone:
     imagePullPolicy: IfNotPresent
   rclone:
     image:
-      repository: csi-rclone
-      tag: "latest"
+      repository: renku/csi-rclone
+      tag: "0.3.8-exp-doi-proxy"
     imagePullPolicy: IfNotPresent
-    resources:
-      {}
+    resources: {}
       # limits:
       #   cpu: 100m
       #   memory: 128Mi
@@ -41,11 +40,10 @@ csiNodepluginRclone:
           - SYS_ADMIN
       privileged: true
     image:
-      repository: csi-rclone
-      tag: "latest"
+      repository: renku/csi-rclone
+      tag: "0.3.8-exp-doi-proxy"
     imagePullPolicy: IfNotPresent
-    resources:
-      {}
+    resources: {}
       # limits:
       #   cpu: 100m
       #   memory: 128Mi
