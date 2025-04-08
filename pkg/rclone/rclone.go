@@ -104,10 +104,11 @@ func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPa
 	if storageType == "doi" {
 		klog.Infof("doi type detected: %s", configName)
 		params["proxy_url"] = "http://squid:3128"
-		// params["proxy_ca_cert"] = ""
+		params["proxy_ca_cert"] = "/etc/squid/tls"
 	}
 
 	params["config_refresh_token"] = "false"
+	klog.Infof("params: %v", params)
 	configOpts := ConfigCreateRequest{
 		Name:        configName,
 		StorageType: storageType,
