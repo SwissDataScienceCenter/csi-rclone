@@ -210,11 +210,11 @@ func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPa
 	if err != nil {
 		return err
 	}
-	klog.Infof("executing mount command  args=%v, targetpath=%s", mountArgs, targetPath)
 	postBody, err = json.Marshal(mountArgs)
 	if err != nil {
 		return fmt.Errorf("mounting failed: couldn't create request body: %s", err)
 	}
+	klog.Infof("executing mount command  args=%v, targetpath=%s", string(postBody), targetPath)
 	requestBody = bytes.NewBuffer(postBody)
 	resp, err = http.Post(fmt.Sprintf("http://localhost:%d/mount/mount", r.port), "application/json", requestBody)
 	if err != nil {
