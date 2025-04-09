@@ -57,14 +57,62 @@ type MountRequest struct {
 	MountOpt   MountOpt `json:"mountOpt"`
 }
 
+// VfsOpt is options for creating the vfs
 type VfsOpt struct {
-	CacheMode    string        `json:"cacheMode"`
-	DirCacheTime time.Duration `json:"dirCacheTime"`
-	ReadOnly     bool          `json:"readOnly"`
+	// CacheMode    string        `json:"cacheMode"`
+	// DirCacheTime time.Duration `json:"dirCacheTime"`
+	// ReadOnly     bool          `json:"readOnly"`
+
+	NoSeek             bool          `json:",omitempty"` // don't allow seeking if set
+	NoChecksum         bool          `json:",omitempty"` // don't check checksums if set
+	ReadOnly           bool          `json:",omitempty"` // if set VFS is read only
+	NoModTime          bool          `json:",omitempty"` // don't read mod times for files
+	DirCacheTime       time.Duration `json:",omitempty"` // how long to consider directory listing cache valid
+	Refresh            bool          `json:",omitempty"` // refreshes the directory listing recursively on start
+	PollInterval       time.Duration `json:",omitempty"`
+	Umask              int           `json:",omitempty"`
+	UID                uint32        `json:",omitempty"`
+	GID                uint32        `json:",omitempty"`
+	DirPerms           os.FileMode   `json:",omitempty"`
+	FilePerms          os.FileMode   `json:",omitempty"`
+	ChunkSize          int64         `json:",omitempty"` // if > 0 read files in chunks
+	ChunkSizeLimit     int64         `json:",omitempty"` // if > ChunkSize double the chunk size after each chunk until reached
+	CacheMode          string        `json:",omitempty"`
+	CacheMaxAge        time.Duration `json:",omitempty"`
+	CacheMaxSize       int64         `json:",omitempty"`
+	CacheMinFreeSpace  int64         `json:",omitempty"`
+	CachePollInterval  time.Duration `json:",omitempty"`
+	CaseInsensitive    bool          `json:",omitempty"`
+	WriteWait          time.Duration `json:",omitempty"` // time to wait for in-sequence write
+	ReadWait           time.Duration `json:",omitempty"` // time to wait for in-sequence read
+	WriteBack          time.Duration `json:",omitempty"` // time to wait before writing back dirty files
+	ReadAhead          int64         `json:",omitempty"` // bytes to read ahead in cache mode "full"
+	UsedIsSize         bool          `json:",omitempty"` // if true, use the `rclone size` algorithm for Used size
+	FastFingerprint    bool          `json:",omitempty"` // if set use fast fingerprints
+	DiskSpaceTotalSize int64         `json:",omitempty"`
 }
+
 type MountOpt struct {
-	AllowNonEmpty bool `json:"allowNonEmpty"`
-	AllowOther    bool `json:"allowOther"`
+	// AllowNonEmpty bool `json:"allowNonEmpty"`
+	// AllowOther    bool `json:"allowOther"`
+
+	DebugFUSE          bool          `json:",omitempty"`
+	AllowNonEmpty      bool          `json:",omitempty"`
+	AllowRoot          bool          `json:",omitempty"`
+	AllowOther         bool          `json:",omitempty"`
+	DefaultPermissions bool          `json:",omitempty"`
+	WritebackCache     bool          `json:",omitempty"`
+	DaemonWait         time.Duration `json:",omitempty"` // time to wait for ready mount from daemon, maximum on Linux or constant on macOS/BSD
+	MaxReadAhead       int64         `json:",omitempty"`
+	ExtraOptions       []string      `json:",omitempty"`
+	ExtraFlags         []string      `json:",omitempty"`
+	AttrTimeout        time.Duration `json:",omitempty"` // how long the kernel caches attribute for
+	DeviceName         string        `json:",omitempty"`
+	VolumeName         string        `json:",omitempty"`
+	NoAppleDouble      bool          `json:",omitempty"`
+	NoAppleXattr       bool          `json:",omitempty"`
+	AsyncRead          bool          `json:",omitempty"`
+	CaseInsensitive    string        `json:",omitempty"`
 }
 type ConfigCreateRequest struct {
 	Name        string                 `json:"name"`
@@ -121,19 +169,40 @@ func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPa
 	}
 	klog.Infof("created config: %s", configName)
 
+	// VFS Mount parameters
+	vfsOpt := VfsOpt{}
+	vfsOptStr := parameters["vfsOpt"]
+	if vfsOptStr != "" {
+		err = json.Unmarshal([]byte(vfsOptStr), &vfsOpt)
+		if err != nil {
+			return fmt.Errorf("could not parse vfsOpt: %w", err)
+		}
+	}
+	if vfsOpt.CacheMode == "" {
+		vfsOpt.CacheMode = "writes"
+	}
+	if vfsOpt.DirCacheTime == 0 {
+		vfsOpt.DirCacheTime = 60 * time.Second
+	}
+	vfsOpt.ReadOnly = readOnly
+	// Mount parameters
+	mountOpt := MountOpt{}
+	mountOptStr := parameters["mountOpt"]
+	if mountOptStr != "" {
+		err = json.Unmarshal([]byte(mountOptStr), &mountOpt)
+		if err != nil {
+			return fmt.Errorf("could not parse mountOpt: %w", err)
+		}
+	}
+	mountOpt.AllowNonEmpty = true
+	mountOpt.AllowOther = true
+
 	remoteWithPath := fmt.Sprintf("%s:%s", configName, rcloneVolume.RemotePath)
 	mountArgs := MountRequest{
 		Fs:         remoteWithPath,
 		MountPoint: targetPath,
-		VfsOpt: VfsOpt{
-			CacheMode:    "writes",
-			DirCacheTime: 60 * time.Second,
-			ReadOnly:     readOnly,
-		},
-		MountOpt: MountOpt{
-			AllowNonEmpty: true,
-			AllowOther:    true,
-		},
+		VfsOpt:     vfsOpt,
+		MountOpt:   mountOpt,
 	}
 
 	// create target, os.Mkdirall is noop if it exists
