@@ -15,6 +15,7 @@ import (
 var (
 	endpoint string
 	nodeID   string
+	cacheDir string
 )
 
 func init() {
@@ -45,6 +46,7 @@ func main() {
 	runNode.MarkPersistentFlagRequired("nodeid")
 	runNode.PersistentFlags().StringVar(&endpoint, "endpoint", "", "CSI endpoint")
 	runNode.MarkPersistentFlagRequired("endpoint")
+	runNode.PersistentFlags().StringVar(&cacheDir, "cachedir", "", "cache dir")
 	runCmd.AddCommand(runNode)
 	runController := &cobra.Command{
 		Use:   "controller",
@@ -83,7 +85,7 @@ func handleNode() {
 		klog.Warningf("There was an error when trying to unmount old volumes: %v", err)
 	}
 	d := rclone.NewDriver(nodeID, endpoint)
-	ns, err := rclone.NewNodeServer(d.CSIDriver)
+	ns, err := rclone.NewNodeServer(d.CSIDriver, cacheDir)
 	if err != nil {
 		panic(err)
 	}
