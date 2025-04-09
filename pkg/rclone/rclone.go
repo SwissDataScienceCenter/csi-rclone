@@ -58,11 +58,9 @@ type MountRequest struct {
 }
 
 // VfsOpt is options for creating the vfs
+//
+// Note that the `Daemon` option has been removed as it is not accepted for rc calls.
 type VfsOpt struct {
-	// CacheMode    string        `json:"cacheMode"`
-	// DirCacheTime time.Duration `json:"dirCacheTime"`
-	// ReadOnly     bool          `json:"readOnly"`
-
 	NoSeek             bool          `json:",omitempty"` // don't allow seeking if set
 	NoChecksum         bool          `json:",omitempty"` // don't check checksums if set
 	ReadOnly           bool          `json:",omitempty"` // if set VFS is read only
@@ -92,10 +90,10 @@ type VfsOpt struct {
 	DiskSpaceTotalSize int64         `json:",omitempty"`
 }
 
+// Options for creating the mount
+//
+// Note that options not supported on Linux have been removed.
 type MountOpt struct {
-	// AllowNonEmpty bool `json:"allowNonEmpty"`
-	// AllowOther    bool `json:"allowOther"`
-
 	DebugFUSE          bool          `json:",omitempty"`
 	AllowNonEmpty      bool          `json:",omitempty"`
 	AllowRoot          bool          `json:",omitempty"`
@@ -114,6 +112,7 @@ type MountOpt struct {
 	AsyncRead          bool          `json:",omitempty"`
 	CaseInsensitive    string        `json:",omitempty"`
 }
+
 type ConfigCreateRequest struct {
 	Name        string                 `json:"name"`
 	Parameters  map[string]string      `json:"parameters"`
@@ -170,7 +169,10 @@ func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPa
 	klog.Infof("created config: %s", configName)
 
 	// VFS Mount parameters
-	vfsOpt := VfsOpt{}
+	vfsOpt := VfsOpt{
+		CacheMode:    "writes",
+		DirCacheTime: 60 * time.Second,
+	}
 	vfsOptStr := parameters["vfsOpt"]
 	if vfsOptStr != "" {
 		err = json.Unmarshal([]byte(vfsOptStr), &vfsOpt)
@@ -178,15 +180,13 @@ func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPa
 			return fmt.Errorf("could not parse vfsOpt: %w", err)
 		}
 	}
-	if vfsOpt.CacheMode == "" {
-		vfsOpt.CacheMode = "writes"
-	}
-	if vfsOpt.DirCacheTime == 0 {
-		vfsOpt.DirCacheTime = 60 * time.Second
-	}
+	// The `ReadOnly` option is specified in the PVC
 	vfsOpt.ReadOnly = readOnly
 	// Mount parameters
-	mountOpt := MountOpt{}
+	mountOpt := MountOpt{
+		AllowNonEmpty: true,
+		AllowOther:    true,
+	}
 	mountOptStr := parameters["mountOpt"]
 	if mountOptStr != "" {
 		err = json.Unmarshal([]byte(mountOptStr), &mountOpt)
@@ -194,8 +194,6 @@ func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPa
 			return fmt.Errorf("could not parse mountOpt: %w", err)
 		}
 	}
-	mountOpt.AllowNonEmpty = true
-	mountOpt.AllowOther = true
 
 	remoteWithPath := fmt.Sprintf("%s:%s", configName, rcloneVolume.RemotePath)
 	mountArgs := MountRequest{
