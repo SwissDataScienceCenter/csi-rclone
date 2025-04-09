@@ -152,7 +152,7 @@ func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPa
 		Parameters:  params,
 		Opt:         map[string]interface{}{"obscure": true},
 	}
-	klog.Infof("executing create config command  args=%v, targetpath=%s", configName, targetPath)
+	klog.Infof("executing create config command name=%s, storageType=%s", configName, configOpts.StorageType)
 	postBody, err := json.Marshal(configOpts)
 	if err != nil {
 		return fmt.Errorf("mounting failed: couldn't create request body: %s", err)
@@ -212,7 +212,7 @@ func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPa
 	if err != nil {
 		return fmt.Errorf("mounting failed: couldn't create request body: %s", err)
 	}
-	klog.Infof("executing mount command  args=%v, targetpath=%s", string(postBody), targetPath)
+	klog.Infof("executing mount command args=%s", string(postBody))
 	requestBody = bytes.NewBuffer(postBody)
 	resp, err = http.Post(fmt.Sprintf("http://localhost:%d/mount/mount", r.port), "application/json", requestBody)
 	if err != nil {
