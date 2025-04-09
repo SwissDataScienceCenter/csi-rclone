@@ -52,6 +52,9 @@ csiNodepluginRclone:
       # requests:
       #   cpu: 100m
       #   memory: 128M
+    cache:
+      # The location of the cache directory
+      dir: /var/lib/rclone/cache
   serviceAccount:
     annotations: {}
   nodeSelector: {}

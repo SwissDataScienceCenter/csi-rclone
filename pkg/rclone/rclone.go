@@ -43,6 +43,7 @@ type Rclone struct {
 	kubeClient *kubernetes.Clientset
 	daemonCmd  *os_exec.Cmd
 	port       int
+	cacheDir   string
 }
 
 type RcloneVolume struct {
@@ -349,11 +350,12 @@ func (r Rclone) GetVolumeById(ctx context.Context, volumeId string) (*RcloneVolu
 	return nil, ErrVolumeNotFound
 }
 
-func NewRclone(kubeClient *kubernetes.Clientset, port int) Operations {
+func NewRclone(kubeClient *kubernetes.Clientset, port int, cacheDir string) Operations {
 	rclone := &Rclone{
 		execute:    exec.New(),
 		kubeClient: kubeClient,
 		port:       port,
+		cacheDir:   cacheDir,
 	}
 	return rclone
 }
@@ -415,13 +417,16 @@ func (r *Rclone) start_daemon() error {
 	rclone_args = append(rclone_args, "--cache-info-age=72h")
 	rclone_args = append(rclone_args, "--cache-chunk-clean-interval=15m")
 	rclone_args = append(rclone_args, "--rc-no-auth")
+	if r.cacheDir != "" {
+		rclone_args = append(rclone_args, fmt.Sprintf("--cache-dir=%s", r.cacheDir))
+	}
 	loglevel := os.Getenv("LOG_LEVEL")
 	if len(loglevel) == 0 {
 		loglevel = "NOTICE"
 	}
 	rclone_args = append(rclone_args, fmt.Sprintf("--log-level=%s", loglevel))
 	rclone_args = append(rclone_args, fmt.Sprintf("--config=%s", f.Name()))
-	klog.Infof("running rclone remote control daemon cmd=%s, args=%s, ", rclone_cmd, rclone_args)
+	klog.Infof("running rclone remote control daemon cmd=%s, args=%s", rclone_cmd, rclone_args)
 
 	env := os.Environ()
 	cmd := os_exec.Command(rclone_cmd, rclone_args...)
