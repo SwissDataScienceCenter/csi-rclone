@@ -55,6 +55,8 @@ csiNodepluginRclone:
     cache:
       # The location of the cache directory
       dir: /var/lib/rclone/cache
+      # The size allocated for the cache directory
+      size: 1G
   serviceAccount:
     annotations: {}
   nodeSelector: {}

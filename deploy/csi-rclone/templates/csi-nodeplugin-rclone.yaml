@@ -79,6 +79,8 @@ spec:
           value: {{ .Values.logLevel | default "NOTICE" | quote }}
         - name: CACHE_DIR
           value: {{ .Values.csiNodepluginRclone.rclone.cache.dir | quote }}
+        - name: CACHE_SIZE
+          value: {{ .Values.csiNodepluginRclone.rclone.cache.size | quote }}
         image: {{ .Values.csiNodepluginRclone.rclone.image.repository }}:{{ .Values.csiNodepluginRclone.rclone.image.tag | default .Chart.AppVersion }}
         imagePullPolicy: {{ .Values.csiNodepluginRclone.rclone.imagePullPolicy }}
         resources:

@@ -44,6 +44,7 @@ type Rclone struct {
 	daemonCmd  *os_exec.Cmd
 	port       int
 	cacheDir   string
+	cacheSize  string
 }
 
 type RcloneVolume struct {
@@ -350,12 +351,13 @@ func (r Rclone) GetVolumeById(ctx context.Context, volumeId string) (*RcloneVolu
 	return nil, ErrVolumeNotFound
 }
 
-func NewRclone(kubeClient *kubernetes.Clientset, port int, cacheDir string) Operations {
+func NewRclone(kubeClient *kubernetes.Clientset, port int, cacheDir string, cacheSize string) Operations {
 	rclone := &Rclone{
 		execute:    exec.New(),
 		kubeClient: kubeClient,
 		port:       port,
 		cacheDir:   cacheDir,
+		cacheSize:  cacheSize,
 	}
 	return rclone
 }
@@ -419,6 +421,9 @@ func (r *Rclone) start_daemon() error {
 	rclone_args = append(rclone_args, "--rc-no-auth")
 	if r.cacheDir != "" {
 		rclone_args = append(rclone_args, fmt.Sprintf("--cache-dir=%s", r.cacheDir))
+	}
+	if r.cacheSize != "" {
+		rclone_args = append(rclone_args, fmt.Sprintf("--vfs-disk-space-total-size=%s", r.cacheSize))
 	}
 	loglevel := os.Getenv("LOG_LEVEL")
 	if len(loglevel) == 0 {
