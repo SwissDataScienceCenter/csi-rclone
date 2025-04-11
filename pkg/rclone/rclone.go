@@ -185,6 +185,7 @@ func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPa
 	vfsOpt.ReadOnly = readOnly
 	// DiskSpaceTotalSize is not a global rclone option
 	vfsOpt.DiskSpaceTotalSize = r.cacheSize
+	vfsOpt.CacheMinFreeSpace = "200M"
 	// Mount parameters
 	mountOpt := MountOpt{
 		AllowNonEmpty: true,
