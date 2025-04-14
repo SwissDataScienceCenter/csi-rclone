@@ -64,6 +64,7 @@ spec:
         - --nodeid=$(NODE_ID)
         - --endpoint=$(CSI_ENDPOINT)
         - --cachedir=$(CACHE_DIR)
+        - --cachesize=$(CACHE_SIZE)
         env:
         - name: NODE_ID
           valueFrom:
@@ -134,4 +135,3 @@ spec:
         name: registration-dir
       - name: cache-dir
         emptyDir:
-          sizeLimit: 1G

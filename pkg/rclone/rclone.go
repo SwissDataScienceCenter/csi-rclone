@@ -80,7 +80,7 @@ type VfsOpt struct {
 	CacheMode          string        `json:",omitempty"`
 	CacheMaxAge        time.Duration `json:",omitempty"`
 	CacheMaxSize       int64         `json:",omitempty"`
-	CacheMinFreeSpace  int64         `json:",omitempty"`
+	CacheMinFreeSpace  string        `json:",omitempty"`
 	CachePollInterval  time.Duration `json:",omitempty"`
 	CaseInsensitive    bool          `json:",omitempty"`
 	WriteWait          time.Duration `json:",omitempty"` // time to wait for in-sequence write
@@ -89,7 +89,7 @@ type VfsOpt struct {
 	ReadAhead          int64         `json:",omitempty"` // bytes to read ahead in cache mode "full"
 	UsedIsSize         bool          `json:",omitempty"` // if true, use the `rclone size` algorithm for Used size
 	FastFingerprint    bool          `json:",omitempty"` // if set use fast fingerprints
-	DiskSpaceTotalSize int64         `json:",omitempty"`
+	DiskSpaceTotalSize string        `json:",omitempty"`
 }
 
 // Options for creating the mount
@@ -184,6 +184,8 @@ func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPa
 	}
 	// The `ReadOnly` option is specified in the PVC
 	vfsOpt.ReadOnly = readOnly
+	// DiskSpaceTotalSize is not a global rclone option
+	vfsOpt.DiskSpaceTotalSize = r.cacheSize
 	// Mount parameters
 	mountOpt := MountOpt{
 		AllowNonEmpty: true,
@@ -422,9 +424,9 @@ func (r *Rclone) start_daemon() error {
 	if r.cacheDir != "" {
 		rclone_args = append(rclone_args, fmt.Sprintf("--cache-dir=%s", r.cacheDir))
 	}
-	if r.cacheSize != "" {
-		rclone_args = append(rclone_args, fmt.Sprintf("--vfs-disk-space-total-size=%s", r.cacheSize))
-	}
+	// if r.cacheSize != "" {
+	// 	rclone_args = append(rclone_args, fmt.Sprintf("--vfs-disk-space-total-size=%s", r.cacheSize))
+	// }
 	loglevel := os.Getenv("LOG_LEVEL")
 	if len(loglevel) == 0 {
 		loglevel = "NOTICE"

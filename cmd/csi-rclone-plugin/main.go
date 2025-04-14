@@ -48,7 +48,7 @@ func main() {
 	runNode.PersistentFlags().StringVar(&endpoint, "endpoint", "", "CSI endpoint")
 	runNode.MarkPersistentFlagRequired("endpoint")
 	runNode.PersistentFlags().StringVar(&cacheDir, "cachedir", "", "cache dir")
-	runNode.PersistentFlags().StringVar(&cacheSize, "cacheSize", "", "cache size")
+	runNode.PersistentFlags().StringVar(&cacheSize, "cachesize", "", "cache size")
 	runCmd.AddCommand(runNode)
 	runController := &cobra.Command{
 		Use:   "controller",
