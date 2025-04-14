@@ -424,9 +424,6 @@ func (r *Rclone) start_daemon() error {
 	if r.cacheDir != "" {
 		rclone_args = append(rclone_args, fmt.Sprintf("--cache-dir=%s", r.cacheDir))
 	}
-	// if r.cacheSize != "" {
-	// 	rclone_args = append(rclone_args, fmt.Sprintf("--vfs-disk-space-total-size=%s", r.cacheSize))
-	// }
 	loglevel := os.Getenv("LOG_LEVEL")
 	if len(loglevel) == 0 {
 		loglevel = "NOTICE"
