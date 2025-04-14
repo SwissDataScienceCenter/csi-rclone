@@ -1,5 +1,5 @@
 ARG RCLONE_IMAGE_REPOSITORY="ghcr.io/swissdatasciencecenter/rclone"
-ARG RCLONE_IMAGE_TAG="sha-1a32af4"
+ARG RCLONE_IMAGE_TAG="sha-2f227e9"
 FROM ${RCLONE_IMAGE_REPOSITORY}:${RCLONE_IMAGE_TAG} AS rclone
 
 FROM golang:1.23.8-bookworm AS build
