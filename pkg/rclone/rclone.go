@@ -11,7 +11,6 @@ import (
 	"os"
 	os_exec "os/exec"
 	"syscall"
-	"time"
 
 	"strings"
 
@@ -63,56 +62,56 @@ type MountRequest struct {
 //
 // Note that the `Daemon` option has been removed as it is not accepted for rc calls.
 type VfsOpt struct {
-	NoSeek             bool          `json:",omitempty"` // don't allow seeking if set
-	NoChecksum         bool          `json:",omitempty"` // don't check checksums if set
-	ReadOnly           bool          `json:",omitempty"` // if set VFS is read only
-	NoModTime          bool          `json:",omitempty"` // don't read mod times for files
-	DirCacheTime       time.Duration `json:",omitempty"` // how long to consider directory listing cache valid
-	Refresh            bool          `json:",omitempty"` // refreshes the directory listing recursively on start
-	PollInterval       time.Duration `json:",omitempty"`
-	Umask              int           `json:",omitempty"`
-	UID                uint32        `json:",omitempty"`
-	GID                uint32        `json:",omitempty"`
-	DirPerms           os.FileMode   `json:",omitempty"`
-	FilePerms          os.FileMode   `json:",omitempty"`
-	ChunkSize          int64         `json:",omitempty"` // if > 0 read files in chunks
-	ChunkSizeLimit     int64         `json:",omitempty"` // if > ChunkSize double the chunk size after each chunk until reached
-	CacheMode          string        `json:",omitempty"`
-	CacheMaxAge        time.Duration `json:",omitempty"`
-	CacheMaxSize       int64         `json:",omitempty"`
-	CacheMinFreeSpace  string        `json:",omitempty"`
-	CachePollInterval  time.Duration `json:",omitempty"`
-	CaseInsensitive    bool          `json:",omitempty"`
-	WriteWait          time.Duration `json:",omitempty"` // time to wait for in-sequence write
-	ReadWait           time.Duration `json:",omitempty"` // time to wait for in-sequence read
-	WriteBack          time.Duration `json:",omitempty"` // time to wait before writing back dirty files
-	ReadAhead          int64         `json:",omitempty"` // bytes to read ahead in cache mode "full"
-	UsedIsSize         bool          `json:",omitempty"` // if true, use the `rclone size` algorithm for Used size
-	FastFingerprint    bool          `json:",omitempty"` // if set use fast fingerprints
-	DiskSpaceTotalSize string        `json:",omitempty"`
+	NoSeek             bool        `json:",omitempty"` // don't allow seeking if set
+	NoChecksum         bool        `json:",omitempty"` // don't check checksums if set
+	ReadOnly           bool        `json:",omitempty"` // if set VFS is read only
+	NoModTime          bool        `json:",omitempty"` // don't read mod times for files
+	DirCacheTime       string      `json:",omitempty"` // how long to consider directory listing cache valid
+	Refresh            bool        `json:",omitempty"` // refreshes the directory listing recursively on start
+	PollInterval       string      `json:",omitempty"`
+	Umask              int         `json:",omitempty"`
+	UID                uint32      `json:",omitempty"`
+	GID                uint32      `json:",omitempty"`
+	DirPerms           os.FileMode `json:",omitempty"`
+	FilePerms          os.FileMode `json:",omitempty"`
+	ChunkSize          string      `json:",omitempty"` // if > 0 read files in chunks
+	ChunkSizeLimit     string      `json:",omitempty"` // if > ChunkSize double the chunk size after each chunk until reached
+	CacheMode          string      `json:",omitempty"`
+	CacheMaxAge        string      `json:",omitempty"`
+	CacheMaxSize       string      `json:",omitempty"`
+	CacheMinFreeSpace  string      `json:",omitempty"`
+	CachePollInterval  string      `json:",omitempty"`
+	CaseInsensitive    bool        `json:",omitempty"`
+	WriteWait          string      `json:",omitempty"` // time to wait for in-sequence write
+	ReadWait           string      `json:",omitempty"` // time to wait for in-sequence read
+	WriteBack          string      `json:",omitempty"` // time to wait before writing back dirty files
+	ReadAhead          string      `json:",omitempty"` // bytes to read ahead in cache mode "full"
+	UsedIsSize         bool        `json:",omitempty"` // if true, use the `rclone size` algorithm for Used size
+	FastFingerprint    bool        `json:",omitempty"` // if set use fast fingerprints
+	DiskSpaceTotalSize string      `json:",omitempty"`
 }
 
 // Options for creating the mount
 //
 // Note that options not supported on Linux have been removed.
 type MountOpt struct {
-	DebugFUSE          bool          `json:",omitempty"`
-	AllowNonEmpty      bool          `json:",omitempty"`
-	AllowRoot          bool          `json:",omitempty"`
-	AllowOther         bool          `json:",omitempty"`
-	DefaultPermissions bool          `json:",omitempty"`
-	WritebackCache     bool          `json:",omitempty"`
-	DaemonWait         time.Duration `json:",omitempty"` // time to wait for ready mount from daemon, maximum on Linux or constant on macOS/BSD
-	MaxReadAhead       int64         `json:",omitempty"`
-	ExtraOptions       []string      `json:",omitempty"`
-	ExtraFlags         []string      `json:",omitempty"`
-	AttrTimeout        time.Duration `json:",omitempty"` // how long the kernel caches attribute for
-	DeviceName         string        `json:",omitempty"`
-	VolumeName         string        `json:",omitempty"`
-	NoAppleDouble      bool          `json:",omitempty"`
-	NoAppleXattr       bool          `json:",omitempty"`
-	AsyncRead          bool          `json:",omitempty"`
-	CaseInsensitive    string        `json:",omitempty"`
+	DebugFUSE          bool     `json:",omitempty"`
+	AllowNonEmpty      bool     `json:",omitempty"`
+	AllowRoot          bool     `json:",omitempty"`
+	AllowOther         bool     `json:",omitempty"`
+	DefaultPermissions bool     `json:",omitempty"`
+	WritebackCache     bool     `json:",omitempty"`
+	DaemonWait         string   `json:",omitempty"` // time to wait for ready mount from daemon, maximum on Linux or constant on macOS/BSD
+	MaxReadAhead       string   `json:",omitempty"`
+	ExtraOptions       []string `json:",omitempty"`
+	ExtraFlags         []string `json:",omitempty"`
+	AttrTimeout        string   `json:",omitempty"` // how long the kernel caches attribute for
+	DeviceName         string   `json:",omitempty"`
+	VolumeName         string   `json:",omitempty"`
+	NoAppleDouble      bool     `json:",omitempty"`
+	NoAppleXattr       bool     `json:",omitempty"`
+	AsyncRead          bool     `json:",omitempty"`
+	CaseInsensitive    string   `json:",omitempty"`
 }
 
 type ConfigCreateRequest struct {
@@ -173,7 +172,7 @@ func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPa
 	// VFS Mount parameters
 	vfsOpt := VfsOpt{
 		CacheMode:    "writes",
-		DirCacheTime: 60 * time.Second,
+		DirCacheTime: "60s",
 	}
 	vfsOptStr := parameters["vfsOpt"]
 	if vfsOptStr != "" {
