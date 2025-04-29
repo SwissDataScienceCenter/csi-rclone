@@ -10,10 +10,13 @@ import (
 	"net/http"
 	"os"
 	os_exec "os/exec"
-	"syscall"
-
 	"strings"
+	"syscall"
+	"time"
 
+	"github.com/rclone/rclone/cmd/mountlib"
+	"github.com/rclone/rclone/fs"
+	"github.com/rclone/rclone/vfs/vfscommon"
 	"golang.org/x/net/context"
 	"gopkg.in/ini.v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -51,6 +54,7 @@ type RcloneVolume struct {
 	RemotePath string
 	ID         string
 }
+
 type MountRequest struct {
 	Fs         string   `json:"fs"`
 	MountPoint string   `json:"mountPoint"`
@@ -58,61 +62,9 @@ type MountRequest struct {
 	MountOpt   MountOpt `json:"mountOpt"`
 }
 
-// VfsOpt is options for creating the vfs
-//
-// Note that the `Daemon` option has been removed as it is not accepted for rc calls.
-type VfsOpt struct {
-	NoSeek             bool        `json:",omitempty"` // don't allow seeking if set
-	NoChecksum         bool        `json:",omitempty"` // don't check checksums if set
-	ReadOnly           bool        `json:",omitempty"` // if set VFS is read only
-	NoModTime          bool        `json:",omitempty"` // don't read mod times for files
-	DirCacheTime       string      `json:",omitempty"` // how long to consider directory listing cache valid
-	Refresh            bool        `json:",omitempty"` // refreshes the directory listing recursively on start
-	PollInterval       string      `json:",omitempty"`
-	Umask              int         `json:",omitempty"`
-	UID                uint32      `json:",omitempty"`
-	GID                uint32      `json:",omitempty"`
-	DirPerms           os.FileMode `json:",omitempty"`
-	FilePerms          os.FileMode `json:",omitempty"`
-	ChunkSize          string      `json:",omitempty"` // if > 0 read files in chunks
-	ChunkSizeLimit     string      `json:",omitempty"` // if > ChunkSize double the chunk size after each chunk until reached
-	CacheMode          string      `json:",omitempty"`
-	CacheMaxAge        string      `json:",omitempty"`
-	CacheMaxSize       string      `json:",omitempty"`
-	CacheMinFreeSpace  string      `json:",omitempty"`
-	CachePollInterval  string      `json:",omitempty"`
-	CaseInsensitive    bool        `json:",omitempty"`
-	WriteWait          string      `json:",omitempty"` // time to wait for in-sequence write
-	ReadWait           string      `json:",omitempty"` // time to wait for in-sequence read
-	WriteBack          string      `json:",omitempty"` // time to wait before writing back dirty files
-	ReadAhead          string      `json:",omitempty"` // bytes to read ahead in cache mode "full"
-	UsedIsSize         bool        `json:",omitempty"` // if true, use the `rclone size` algorithm for Used size
-	FastFingerprint    bool        `json:",omitempty"` // if set use fast fingerprints
-	DiskSpaceTotalSize string      `json:",omitempty"`
-}
+type VfsOpt = vfscommon.Options
 
-// Options for creating the mount
-//
-// Note that options not supported on Linux have been removed.
-type MountOpt struct {
-	DebugFUSE          bool     `json:",omitempty"`
-	AllowNonEmpty      bool     `json:",omitempty"`
-	AllowRoot          bool     `json:",omitempty"`
-	AllowOther         bool     `json:",omitempty"`
-	DefaultPermissions bool     `json:",omitempty"`
-	WritebackCache     bool     `json:",omitempty"`
-	DaemonWait         string   `json:",omitempty"` // time to wait for ready mount from daemon, maximum on Linux or constant on macOS/BSD
-	MaxReadAhead       string   `json:",omitempty"`
-	ExtraOptions       []string `json:",omitempty"`
-	ExtraFlags         []string `json:",omitempty"`
-	AttrTimeout        string   `json:",omitempty"` // how long the kernel caches attribute for
-	DeviceName         string   `json:",omitempty"`
-	VolumeName         string   `json:",omitempty"`
-	NoAppleDouble      bool     `json:",omitempty"`
-	NoAppleXattr       bool     `json:",omitempty"`
-	AsyncRead          bool     `json:",omitempty"`
-	CaseInsensitive    string   `json:",omitempty"`
-}
+type MountOpt = mountlib.Options
 
 type ConfigCreateRequest struct {
 	Name        string                 `json:"name"`
@@ -171,8 +123,8 @@ func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPa
 
 	// VFS Mount parameters
 	vfsOpt := VfsOpt{
-		CacheMode:    "writes",
-		DirCacheTime: "60s",
+		CacheMode:    vfscommon.CacheModeWrites,
+		DirCacheTime: fs.Duration(time.Duration(1) * time.Minute),
 	}
 	vfsOptStr := parameters["vfsOpt"]
 	if vfsOptStr != "" {
@@ -184,7 +136,12 @@ func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPa
 	// The `ReadOnly` option is specified in the PVC
 	vfsOpt.ReadOnly = readOnly
 	// DiskSpaceTotalSize is not a global rclone option
-	vfsOpt.DiskSpaceTotalSize = r.cacheSize
+	if r.cacheDir != "" {
+		err = vfsOpt.DiskSpaceTotalSize.Set(r.cacheSize)
+		if err != nil {
+			return fmt.Errorf("could not parse cache size: %w", err)
+		}
+	}
 	// Mount parameters
 	mountOpt := MountOpt{
 		AllowNonEmpty: true,
