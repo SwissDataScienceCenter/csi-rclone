@@ -336,7 +336,8 @@ func (s serverErrorResponse) String() string {
 		"path",
 		s.Path,
 		"input",
-		"<redacted>",
+		// "<redacted>",
+		s.input,
 		"status",
 		s.status,
 	)

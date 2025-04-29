@@ -41,6 +41,7 @@ jobs:
             init-kind-cluster
             local-deploy
             get-kind-kubeconfig
+            rclone version
             go test -v ./...
       - name: Print rclone log
         if: ${{ failure() }}
