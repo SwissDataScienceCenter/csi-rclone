@@ -37,7 +37,7 @@ pkgs.mkShell {
 
     # Nix
     nil # LSP
-    nixfmt # Formatter
+    nixfmt-classic # Formatter
   ] ++ optionalPkgs ++ [initKindCluster deleteKindCluster getKindKubeconfig localDeployScript reloadScript];
 
   shellHook = ''
