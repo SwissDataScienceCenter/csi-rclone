@@ -14,7 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/rclone/rclone/cmd/mountlib"
 	"github.com/rclone/rclone/fs"
 	"github.com/rclone/rclone/vfs/vfscommon"
 	"golang.org/x/net/context"
@@ -62,9 +61,63 @@ type MountRequest struct {
 	MountOpt   MountOpt `json:"mountOpt"`
 }
 
-type VfsOpt = vfscommon.Options
+type VfsOpt struct {
+	NoSeek             bool                `json:",omitempty"` // don't allow seeking if set
+	NoChecksum         bool                `json:",omitempty"` // don't check checksums if set
+	ReadOnly           bool                `json:",omitempty"` // if set VFS is read only
+	Links              bool                `json:",omitempty"` // if set interpret link files
+	NoModTime          bool                `json:",omitempty"` // don't read mod times for files
+	DirCacheTime       fs.Duration         `json:",omitempty"` // how long to consider directory listing cache valid
+	Refresh            bool                `json:",omitempty"` // refreshes the directory listing recursively on start
+	PollInterval       fs.Duration         `json:",omitempty"`
+	Umask              vfscommon.FileMode  `json:",omitempty"`
+	UID                uint32              `json:",omitempty"`
+	GID                uint32              `json:",omitempty"`
+	DirPerms           vfscommon.FileMode  `json:",omitempty"`
+	FilePerms          vfscommon.FileMode  `json:",omitempty"`
+	LinkPerms          vfscommon.FileMode  `json:",omitempty"`
+	ChunkSize          fs.SizeSuffix       `json:",omitempty"` // if > 0 read files in chunks
+	ChunkSizeLimit     fs.SizeSuffix       `json:",omitempty"` // if > ChunkSize double the chunk size after each chunk until reached
+	ChunkStreams       int                 `json:",omitempty"` // Number of download streams to use
+	CacheMode          vfscommon.CacheMode `json:",omitempty"`
+	CacheMaxAge        fs.Duration         `json:",omitempty"`
+	CacheMaxSize       fs.SizeSuffix       `json:",omitempty"`
+	CacheMinFreeSpace  fs.SizeSuffix       `json:",omitempty"`
+	CachePollInterval  fs.Duration         `json:",omitempty"`
+	CaseInsensitive    bool                `json:",omitempty"`
+	BlockNormDupes     bool                `json:",omitempty"`
+	WriteWait          fs.Duration         `json:",omitempty"` // time to wait for in-sequence write
+	ReadWait           fs.Duration         `json:",omitempty"` // time to wait for in-sequence read
+	WriteBack          fs.Duration         `json:",omitempty"` // time to wait before writing back dirty files
+	ReadAhead          fs.SizeSuffix       `json:",omitempty"` // bytes to read ahead in cache mode "full"
+	UsedIsSize         bool                `json:",omitempty"` // if true, use the `rclone size` algorithm for Used size
+	FastFingerprint    bool                `json:",omitempty"` // if set use fast fingerprints
+	DiskSpaceTotalSize fs.SizeSuffix       `json:",omitempty"`
+}
 
-type MountOpt = mountlib.Options
+type MountOpt struct {
+	DebugFUSE          bool          `json:",omitempty"`
+	AllowNonEmpty      bool          `json:",omitempty"`
+	AllowRoot          bool          `json:",omitempty"`
+	AllowOther         bool          `json:",omitempty"`
+	DefaultPermissions bool          `json:",omitempty"`
+	WritebackCache     bool          `json:",omitempty"`
+	Daemon             bool          `json:",omitempty"`
+	DaemonWait         fs.Duration   `json:",omitempty"` // time to wait for ready mount from daemon, maximum on Linux or constant on macOS/BSD
+	MaxReadAhead       fs.SizeSuffix `json:",omitempty"`
+	ExtraOptions       []string      `json:",omitempty"`
+	ExtraFlags         []string      `json:",omitempty"`
+	AttrTimeout        fs.Duration   `json:",omitempty"` // how long the kernel caches attribute for
+	DeviceName         string        `json:",omitempty"`
+	VolumeName         string        `json:",omitempty"`
+	NoAppleDouble      bool          `json:",omitempty"`
+	NoAppleXattr       bool          `json:",omitempty"`
+	DaemonTimeout      fs.Duration   `json:",omitempty"` // OSXFUSE only
+	AsyncRead          bool          `json:",omitempty"`
+	NetworkMode        bool          `json:",omitempty"` // Windows only
+	DirectIO           bool          `json:",omitempty"` // use Direct IO for file access
+	CaseInsensitive    fs.Tristate   `json:",omitempty"`
+}
 
 type ConfigCreateRequest struct {
 	Name        string                 `json:"name"`
