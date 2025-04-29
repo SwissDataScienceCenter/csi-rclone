@@ -102,7 +102,6 @@ type MountOpt struct {
 	AllowOther         bool          `json:",omitempty"`
 	DefaultPermissions bool          `json:",omitempty"`
 	WritebackCache     bool          `json:",omitempty"`
-	Daemon             bool          `json:",omitempty"`
 	DaemonWait         fs.Duration   `json:",omitempty"` // time to wait for ready mount from daemon, maximum on Linux or constant on macOS/BSD
 	MaxReadAhead       fs.SizeSuffix `json:",omitempty"`
 	ExtraOptions       []string      `json:",omitempty"`
@@ -112,11 +111,9 @@ type MountOpt struct {
 	VolumeName         string        `json:",omitempty"`
 	NoAppleDouble      bool          `json:",omitempty"`
 	NoAppleXattr       bool          `json:",omitempty"`
-	DaemonTimeout      fs.Duration   `json:",omitempty"` // OSXFUSE only
 	AsyncRead          bool          `json:",omitempty"`
-	NetworkMode        bool          `json:",omitempty"` // Windows only
 	DirectIO           bool          `json:",omitempty"` // use Direct IO for file access
-	CaseInsensitive    fs.Tristate   `json:",omitempty"`
+	CaseInsensitive    bool          `json:",omitempty"`
 }
 
 type ConfigCreateRequest struct {
