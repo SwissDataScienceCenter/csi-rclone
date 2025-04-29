@@ -61,6 +61,9 @@ type MountRequest struct {
 	MountOpt   MountOpt `json:"mountOpt"`
 }
 
+// VfsOpt is options for creating the vfs
+//
+// Note that the `Daemon` option has been removed as it is not accepted for rc calls.
 type VfsOpt struct {
 	NoSeek             bool                `json:",omitempty"` // don't allow seeking if set
 	NoChecksum         bool                `json:",omitempty"` // don't check checksums if set
@@ -95,6 +98,9 @@ type VfsOpt struct {
 	DiskSpaceTotalSize fs.SizeSuffix       `json:",omitempty"`
 }
 
+// Options for creating the mount
+//
+// Note that options not supported on Linux have been removed.
 type MountOpt struct {
 	DebugFUSE          bool          `json:",omitempty"`
 	AllowNonEmpty      bool          `json:",omitempty"`
@@ -386,8 +392,7 @@ func (s serverErrorResponse) String() string {
 		"path",
 		s.Path,
 		"input",
-		// "<redacted>",
-		s.input,
+		"<redacted>",
 		"status",
 		s.status,
 	)
