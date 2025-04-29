@@ -5,7 +5,7 @@ let
     pname = "csi-rclone-pvc-1";
     version = "0.2.0";
     src = ../../.;
-    vendorHash = "sha256-14l9ybbaHRs+rlcSABBwpUXe9TNlP1HoCNZCvdYiOmk=";
+    vendorHash = "sha256-qJL+pmBF1uO9YmZ8aNRI3+phrDLcM4+crqzeKUHr7Nc=";
     # CGO = 0;
     # preBuild = ''
     #   whoami
