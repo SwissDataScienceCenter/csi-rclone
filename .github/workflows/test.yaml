@@ -25,9 +25,6 @@ jobs:
     outputs:
       image_repository: ${{ steps.docker_image.outputs.image_repository }}
       image_tag: ${{ steps.docker_image.outputs.image_tag }}
-    permissions:
-      contents: read
-      packages: write
     steps:
       - uses: actions/checkout@v4
       - name: Docker image metadata
@@ -52,6 +49,11 @@ jobs:
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
           echo "image_repository=$IMAGE_REPOSITORY" >> "$GITHUB_OUTPUT"
           echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Pre-build devcontainer
         uses: devcontainers/ci@v0.3
         continue-on-error: true
@@ -63,6 +65,50 @@ jobs:
           cacheFrom: |
             ${{ steps.docker_image.outputs.image_repository }}:${{ steps.docker_image.outputs.image_tag }}
             ${{ steps.docker_image.outputs.image_repository }}:${{ env.DEVCONTAINER_IMAGE_TAG_MAIN }}
+
+  tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build csi-rclone
+        uses: devcontainers/ci@v0.3
+        with:
+          runCmd: |
+            make build/csi-rclone
+          push: never
+          skipContainerUserIdUpdate: false
+          cacheFrom: ${{ needs.build-devcontainer.outputs.image_repository }}:${{ needs.build-devcontainer.outputs.image_tag }}
+      - name: Helm check
+        uses: devcontainers/ci@v0.3
+        with:
+          runCmd: |
+            helm lint deploy/csi-rclone
+          push: never
+          skipContainerUserIdUpdate: false
+          cacheFrom: ${{ needs.build-devcontainer.outputs.image_repository }}:${{ needs.build-devcontainer.outputs.image_tag }}
+      - name: Run tests
+        id: tests
+        uses: devcontainers/ci@v0.3
+        with:
+          runCmd: |
+            # TODO: move these commands into the Makefile
+            kind delete cluster --name "$CLUSTER_NAME"
+            kind create cluster --name "$CLUSTER_NAME"
+            mkdir -p build/kube
+            kind get kubeconfig --name "$CLUSTER_NAME" > build/kube/config
+            docker buildx build --tag csi-rclone:test --load .
+            kind load docker-image csi-rclone:test --name "$CLUSTER_NAME"
+            mkdir -p build/kind
+            helm template -n csi-rclone csi-rclone deploy/csi-rclone > build/kind/csi-rclone-chart.yaml
+            KUBECONFIG=build/kube/config kubectl create namespace csi-rclone || true
+            KUBECONFIG=build/kube/config kubectl apply -f build/kind/csi-rclone-chart.yaml
+            KUBECONFIG=build/kube/config go test -v ./...
+          push: never
+          skipContainerUserIdUpdate: false
+          cacheFrom: ${{ needs.build-devcontainer.outputs.image_repository }}:${{ needs.build-devcontainer.outputs.image_tag }}
+      - name: Print rclone log
+        if: ${{ failure() && steps.tests.conclusion == 'failure' }}
+        run: cat /tmp/rclone.log
 
 # on: 
 #   pull_request:

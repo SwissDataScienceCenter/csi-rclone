@@ -19,3 +19,5 @@ rm -rf /tmp/rclone
 # Fix the $GOPATH folder
 chown -R "${USERNAME}:golang" /go
 chmod -R g+r+w /go
+
+echo "user_allow_other" >> /etc/fuse.conf

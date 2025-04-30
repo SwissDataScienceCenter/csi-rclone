@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/kube"
@@ -24,19 +25,19 @@ import (
 func getMountDirs() (string, string) {
 	tmpDir := os.TempDir()
 	uuid := uuid.New().String()
-	mntDir := tmpDir + "mount-" + uuid
-	stageDir := tmpDir + "stage-" + uuid
+	mntDir := filepath.Join(tmpDir, "mount-"+uuid)
+	stageDir := filepath.Join(tmpDir, "stage-"+uuid)
 	return mntDir, stageDir
 }
 
 func createSocketDir() (string, error) {
 	uuid := uuid.New().String()
 	tmpDir := os.TempDir()
-	socketDir := tmpDir + "socket-" + uuid
+	socketDir := filepath.Join(tmpDir, "socket-"+uuid)
 	os.RemoveAll(socketDir)
 	err := os.MkdirAll(socketDir, 0700)
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 	return socketDir, nil
 }

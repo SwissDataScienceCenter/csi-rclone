@@ -20,4 +20,5 @@
     "containerEnv": {
         "CLUSTER_NAME": "csi-rclone-k8s"
     }
+    // "postCreateCommand": "echo \"user_allow_other\" >> /etc/fuse.conf"
 }
