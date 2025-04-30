@@ -102,7 +102,7 @@ jobs:
             helm template -n csi-rclone csi-rclone deploy/csi-rclone > build/kind/csi-rclone-chart.yaml
             KUBECONFIG=build/kube/config kubectl create namespace csi-rclone || true
             KUBECONFIG=build/kube/config kubectl apply -f build/kind/csi-rclone-chart.yaml
-            KUBECONFIG=build/kube/config go test -v ./...
+            KUBECONFIG="$(pwd)/build/kube/config" go test -v ./...
           push: never
           skipContainerUserIdUpdate: false
           cacheFrom: ${{ needs.build-devcontainer.outputs.image_repository }}:${{ needs.build-devcontainer.outputs.image_tag }}
