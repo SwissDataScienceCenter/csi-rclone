@@ -9,8 +9,15 @@
         },
         "ghcr.io/devcontainers/features/docker-in-docker:2": {},
         "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {
-			"minikube": "none"
-		},
-        "ghcr.io/devcontainers-extra/features/kind:1": {}
+            "minikube": "none"
+        },
+        "ghcr.io/devcontainers-extra/features/kind:1": {},
+        "./rclone": {
+            "rclone_repository": "https://github.com/rclone/rclone.git",
+            "rclone_ref": "v1.65.2"
+        }
+    },
+    "containerEnv": {
+        "CLUSTER_NAME": "csi-rclone-k8s"
     }
 }

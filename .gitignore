@@ -1,6 +1,6 @@
 _output/
 .vscode
-rclone-build/
+build/
 .direnv/
 result
 kubeconfig

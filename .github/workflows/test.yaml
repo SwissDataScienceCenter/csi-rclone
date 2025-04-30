@@ -1,42 +1,104 @@
 name: Run Tests
-on: 
-  pull_request:
-    types: [ opened, reopened, synchronize ]
-    branches:
+
+on:
   push:
-    branches:
-      - master
-    tags:
-      - "v*.*.*"
+
+defaults:
+  run:
+    shell: bash
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  tests:
-    runs-on: ubuntu-latest
+  build-devcontainer:
+    runs-on: ubuntu-24.04
+    outputs:
+      image_repository: ${{ steps.docker_image.outputs.image_repository }}
+      image_tag: ${{ steps.docker_image.outputs.image_tag }}
     steps:
-      - uses: actions/checkout@v3
-      - name: Install fuse
+      - uses: actions/checkout@v4
+      - name: Docker image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DEVCONTAINER_REGISTRY }}/${{ env.DEVCONTAINER_IMAGE_NAME }}
+          tags: |
+            type=ref,event=pr,prefix=cache-pr-,priority=600
+            type=ref,event=branch,prefix=cache-,priority=500
+            type=ref,event=tag,prefix=cache-,priority=500
+          flavor: |
+            latest=false
+      - name: Extract Docker image name
+        id: docker_image
+        env:
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
         run: |
-          sudo apt-get update
-          sudo apt-get install -y fuse3 
-          sudo bash -c 'echo "user_allow_other" >> /etc/fuse.conf'
-      - uses: actions/setup-go@v4
+          IMAGE=$(echo "$IMAGE_TAGS" | cut -d" " -f1)
+          IMAGE_REPOSITORY=$(echo "$IMAGE" | cut -d":" -f1)
+          IMAGE_TAG=$(echo "$IMAGE" | cut -d":" -f2)
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "image_repository=$IMAGE_REPOSITORY" >> "$GITHUB_OUTPUT"
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v3
         with:
-          go-version: '1.20'
-      - uses: cachix/install-nix-action@v22
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Pre-build devcontainer
+        uses: devcontainers/ci@v0.3
+        continue-on-error: true
         with:
-          nix_path: nixpkgs=channel:nixos-unstable
-      - name: Flake check
-        run: nix flake check
-      - name: Helm check
-        run: helm lint deploy/csi-rclone
-      - name: Run tests
-        uses: workflow/nix-shell-action@v3.3.0
-        with:
-          flakes-from-devshell: true
-          script: |
-            init-kind-cluster
-            local-deploy
-            get-kind-kubeconfig
-            go test -v ./...
-      - name: Print rclone log
-        if: ${{ failure() }}
-        run: cat /tmp/rclone.log
+          push: always
+          skipContainerUserIdUpdate: false
+          imageName: ${{ steps.docker_image.outputs.image_repository }}
+          imageTag: ${{ steps.docker_image.outputs.image_tag }}
+          cacheFrom: |
+            ${{ steps.docker_image.outputs.image_repository }}:${{ steps.docker_image.outputs.image_tag }}
+            ${{ steps.docker_image.outputs.image_repository }}:${{ env.DEVCONTAINER_IMAGE_TAG_MAIN }}
+
+# on: 
+#   pull_request:
+#     types: [ opened, reopened, synchronize ]
+#     branches:
+#   push:
+#     branches:
+#       - master
+#     tags:
+#       - "v*.*.*"
+# jobs:
+#   tests:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v3
+#       - name: Install fuse
+#         run: |
+#           sudo apt-get update
+#           sudo apt-get install -y fuse3 
+#           sudo bash -c 'echo "user_allow_other" >> /etc/fuse.conf'
+#       - uses: actions/setup-go@v4
+#         with:
+#           go-version: '1.20'
+#       - uses: cachix/install-nix-action@v22
+#         with:
+#           nix_path: nixpkgs=channel:nixos-unstable
+#       - name: Flake check
+#         run: nix flake check
+#       - name: Helm check
+#         run: helm lint deploy/csi-rclone
+#       - name: Run tests
+#         uses: workflow/nix-shell-action@v3.3.0
+#         with:
+#           flakes-from-devshell: true
+#           script: |
+#             init-kind-cluster
+#             local-deploy
+#             get-kind-kubeconfig
+#             go test -v ./...
+#       - name: Print rclone log
+#         if: ${{ failure() }}
+#         run: cat /tmp/rclone.log

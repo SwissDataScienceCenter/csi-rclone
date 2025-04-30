@@ -1,0 +1,30 @@
+{
+  "id": "rclone",
+  "version": "1.0.0",
+  "name": "A feature adding a custom version of rclone",
+  "postCreateCommand": "rclone --version",
+  "installsAfter": [
+    "ghcr.io/devcontainers/features/go"
+  ],
+  "options": {
+    "rclone_repository": {
+      "type": "string",
+      "description": "rclone repository",
+      "proposals": [
+        "https://github.com/SwissDataScienceCenter/rclone.git",
+        "https://github.com/rclone/rclone.git"
+      ],
+      "default": "https://github.com/rclone/rclone.git"
+    },
+    "rclone_ref": {
+      "type": "string",
+      "description": "git reference",
+      "proposals": [
+        "master",
+        "v1.69.1",
+        "v1.65.2"
+      ],
+      "default": "v1.65.2"
+    }
+  }
+}
