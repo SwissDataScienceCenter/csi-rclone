@@ -12,7 +12,7 @@ build/csi-rclone:  ## Build the csi-rclone binary
 
 build-csi-rclone: build/csi-rclone  ## Build the csi-rclone binary
 
-.PHONE: tests
+.PHONY: tests
 tests:  ## Run tests
 	KUBECONFIG="$(current_dir)/build/kube/config" go test -v ./...
 
