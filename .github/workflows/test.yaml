@@ -3,6 +3,11 @@ name: Run Tests
 on:
   push:
 
+env:
+  DEVCONTAINER_REGISTRY: ghcr.io
+  DEVCONTAINER_IMAGE_NAME: ${{ github.repository }}/devcontainer
+  DEVCONTAINER_IMAGE_TAG_MAIN: "cache-main"
+
 defaults:
   run:
     shell: bash
