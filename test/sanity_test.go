@@ -58,7 +58,7 @@ var _ = Describe("Sanity CSI checks", Ordered, func() {
 		os.Setenv("DRIVER_NAME", "csi-rclone")
 		driver = rclone.NewDriver("hostname", endpoint)
 		cs := rclone.NewControllerServer(driver.CSIDriver)
-		ns, err := rclone.NewNodeServer(driver.CSIDriver)
+		ns, err := rclone.NewNodeServer(driver.CSIDriver, "", "")
 		Expect(err).ShouldNot(HaveOccurred())
 		driver.WithControllerServer(cs).WithNodeServer(ns)
 		go func() {

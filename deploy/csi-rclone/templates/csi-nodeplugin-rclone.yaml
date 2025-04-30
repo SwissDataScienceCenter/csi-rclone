@@ -63,6 +63,8 @@ spec:
         - node
         - --nodeid=$(NODE_ID)
         - --endpoint=$(CSI_ENDPOINT)
+        - --cachedir=$(CACHE_DIR)
+        - --cachesize=$(CACHE_SIZE)
         env:
         - name: NODE_ID
           valueFrom:
@@ -76,6 +78,10 @@ spec:
           value: {{ .Values.storageClassName | quote}}
         - name: LOG_LEVEL
           value: {{ .Values.logLevel | default "NOTICE" | quote }}
+        - name: CACHE_DIR
+          value: {{ .Values.csiNodepluginRclone.rclone.cache.dir | quote }}
+        - name: CACHE_SIZE
+          value: {{ .Values.csiNodepluginRclone.rclone.cache.size | quote }}
         image: {{ .Values.csiNodepluginRclone.rclone.image.repository }}:{{ .Values.csiNodepluginRclone.rclone.image.tag | default .Chart.AppVersion }}
         imagePullPolicy: {{ .Values.csiNodepluginRclone.rclone.imagePullPolicy }}
         resources:
@@ -100,6 +106,8 @@ spec:
         - mountPath: /var/lib/kubelet/pods
           mountPropagation: Bidirectional
           name: pods-mount-dir
+        - mountPath: /var/lib/rclone
+          name: cache-dir
     {{- with .Values.csiNodepluginRclone.nodeSelector }}
       nodeSelector:
         {{ toYaml . | nindent 8 }}
@@ -125,3 +133,5 @@ spec:
           path: {{ .Values.kubeletDir }}/plugins_registry
           type: DirectoryOrCreate
         name: registration-dir
+      - name: cache-dir
+        emptyDir:

@@ -52,6 +52,12 @@ csiNodepluginRclone:
       # requests:
       #   cpu: 100m
       #   memory: 128M
+    # Options to configure rclone's caching with VFS
+    cache:
+      # The location of the cache directory
+      dir: /var/lib/rclone/cache
+      # The size allocated for the cache directory
+      size: 1G
   serviceAccount:
     annotations: {}
   nodeSelector: {}

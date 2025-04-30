@@ -64,7 +64,7 @@ func NewDriver(nodeID, endpoint string) *Driver {
 	return d
 }
 
-func NewNodeServer(csiDriver *csicommon.CSIDriver) (*nodeServer, error) {
+func NewNodeServer(csiDriver *csicommon.CSIDriver, cacheDir string, cacheSize string) (*nodeServer, error) {
 	kubeClient, err := kube.GetK8sClient()
 	if err != nil {
 		return nil, err
@@ -74,7 +74,7 @@ func NewNodeServer(csiDriver *csicommon.CSIDriver) (*nodeServer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Cannot get a free TCP port to run rclone")
 	}
-	rcloneOps := NewRclone(kubeClient, rclonePort)
+	rcloneOps := NewRclone(kubeClient, rclonePort, cacheDir, cacheSize)
 
 	return &nodeServer{
 		DefaultNodeServer: csicommon.NewDefaultNodeServer(csiDriver),
