@@ -7,6 +7,9 @@
         "ghcr.io/devcontainers-extra/features/apt-packages:1": {
             "packages": "fuse3"
         },
+        "ghcr.io/devcontainers-extra/features/bash-command:1": {
+            "command": "echo \"user_allow_other\" >> /etc/fuse.conf"
+        },
         "ghcr.io/devcontainers/features/docker-in-docker:2": {},
         "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {
             "minikube": "none"
@@ -17,8 +20,11 @@
             "rclone_ref": "v1.65.2"
         }
     },
+    "overrideFeatureInstallOrder": [
+        "ghcr.io/devcontainers-extra/features/apt-packages",
+        "ghcr.io/devcontainers-extra/features/bash-command"
+    ],
     "containerEnv": {
         "CLUSTER_NAME": "csi-rclone-k8s"
     }
-    // "postCreateCommand": "echo \"user_allow_other\" >> /etc/fuse.conf"
 }
