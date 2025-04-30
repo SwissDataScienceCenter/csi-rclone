@@ -84,7 +84,7 @@ jobs:
         uses: devcontainers/ci@v0.3
         with:
           runCmd: |
-            helm lint deploy/csi-rclone
+            make helm-lint
           push: never
           skipContainerUserIdUpdate: false
           cacheFrom: ${{ needs.build-devcontainer.outputs.image_repository }}:${{ needs.build-devcontainer.outputs.image_tag }}
@@ -93,18 +93,15 @@ jobs:
         uses: devcontainers/ci@v0.3
         with:
           runCmd: |
-            # TODO: move these commands into the Makefile
-            kind delete cluster --name "$CLUSTER_NAME"
-            kind create cluster --name "$CLUSTER_NAME"
-            mkdir -p build/kube
-            kind get kubeconfig --name "$CLUSTER_NAME" > build/kube/config
-            docker buildx build --tag csi-rclone:test --load .
-            kind load docker-image csi-rclone:test --name "$CLUSTER_NAME"
-            mkdir -p build/kind
-            helm template -n csi-rclone csi-rclone deploy/csi-rclone > build/kind/csi-rclone-chart.yaml
-            KUBECONFIG=build/kube/config kubectl create namespace csi-rclone || true
-            KUBECONFIG=build/kube/config kubectl apply -f build/kind/csi-rclone-chart.yaml
-            KUBECONFIG="$(pwd)/build/kube/config" go test -v ./...
+            make cleanup
+            make kind-delete-cluster
+            make kind-create-cluster
+            make kind-get-kubeconfig
+            make kind-create-namespace
+            make kind-load-docker-image-test
+            make helm-template-test
+            make kind-depoy-test
+            make tests
           push: never
           skipContainerUserIdUpdate: false
           cacheFrom: ${{ needs.build-devcontainer.outputs.image_repository }}:${{ needs.build-devcontainer.outputs.image_tag }}
