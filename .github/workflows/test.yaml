@@ -25,6 +25,9 @@ jobs:
     outputs:
       image_repository: ${{ steps.docker_image.outputs.image_repository }}
       image_tag: ${{ steps.docker_image.outputs.image_tag }}
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
       - name: Docker image metadata
