@@ -1,22 +1,42 @@
 name: Publish chart
+
 on:
   push:
     tags:
       - "*.*.*"
   workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+permissions:
+  contents: read
+
 jobs:
   publish-chart:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - name: Git checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup Python
+        uses: actions/setup-python@v4
         with:
           python-version: 3.11
-      - uses: azure/setup-helm@v3
+      - name: Setup Helm
+        uses: azure/setup-helm@v3
         with:
           token: ${{secrets.GITHUB_TOKEN }}
-      - name: install dependencies
+      - name: Install dependencies
         run: pip install chartpress
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.RENKU_DOCKER_USERNAME }}
+          password: ${{ secrets.RENKU_DOCKER_PASSWORD }}
       - name: Publish chart
         env:
           DOCKER_USERNAME: ${{ secrets.RENKU_DOCKER_USERNAME }}
