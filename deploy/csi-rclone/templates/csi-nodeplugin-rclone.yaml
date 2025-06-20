@@ -108,6 +108,11 @@ spec:
           name: pods-mount-dir
         - mountPath: /var/lib/rclone
           name: cache-dir
+    updateStrategy:
+      type: RollingUpdate
+      rollingUpdate:
+        maxUnavailable: 100%
+        maxSurge: 100%
     {{- with .Values.csiNodepluginRclone.nodeSelector }}
       nodeSelector:
         {{ toYaml . | nindent 8 }}
