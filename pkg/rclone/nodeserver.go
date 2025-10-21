@@ -140,7 +140,7 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
 		if strings.Contains(err.Error(), "couldn't connect SSH") {
-			return  nil, status.Error(codes.Unauthenticated, err.Error())
+			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
