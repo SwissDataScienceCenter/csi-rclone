@@ -73,6 +73,10 @@ spec:
           value: "unix://plugin/csi.sock"
         - name: KUBERNETES_CLUSTER_DOMAIN
           value: {{ quote .Values.kubernetesClusterDomain }}
+        {{- if .Values.csiControllerRclone.rclone.goMemLimit }}
+        - name: GOMEMLIMIT
+          value: {{ .Values.csiControllerRclone.rclone.goMemLimit }}
+        {{- end }}
         image: {{ .Values.csiControllerRclone.rclone.image.repository }}:{{ .Values.csiControllerRclone.rclone.image.tag | default .Chart.AppVersion }}
         imagePullPolicy: {{ .Values.csiControllerRclone.rclone.imagePullPolicy }}
         resources:

@@ -23,6 +23,9 @@ csiControllerRclone:
       # requests:
       #   cpu: 100m
       #   memory: 128M
+    # If set, used to set GOMEMLIMIT, it should be strictly lower than
+    # limits.memory to prevent OOMkills
+    #goMemLimit: 115Mi
   replicas: 1
   serviceAccount:
     annotations: {}
@@ -55,7 +58,10 @@ csiNodepluginRclone:
       #   memory: 128Mi
       # requests:
       #   cpu: 100m
-      #   memory: 128M
+      #   memory: 128Mi
+    # If set, used to set GOMEMLIMIT, it should be strictly lower than
+    # limits.memory to prevent OOMkills
+    #goMemLimit: 115Mi
     # Options to configure rclone's caching with VFS
     cache:
       # The location of the cache directory

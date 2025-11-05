@@ -82,6 +82,10 @@ spec:
           value: {{ .Values.csiNodepluginRclone.rclone.cache.dir | quote }}
         - name: CACHE_SIZE
           value: {{ .Values.csiNodepluginRclone.rclone.cache.size | quote }}
+        {{- if .Values.csiNodepluginRclone.rclone.goMemLimit }}
+        - name: GOMEMLIMIT
+          value: {{ .Values.csiNodepluginRclone.rclone.goMemLimit }}
+        {{- end }}
         {{- if .Values.csiNodepluginRclone.rclone.extraArgs }}
         - name: EXTRA_ARGS
           value: {{ .Values.csiNodepluginRclone.rclone.extraArgs | toJson | quote }}
