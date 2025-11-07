@@ -60,6 +60,15 @@ spec:
       - name: rclone
         args:
         - run
+        {{- if .Values.csiNodepluginRclone.rclone.metrics.enable }}
+        - --metrics-enable={{.Values.csiNodepluginRclone.rclone.metrics.enable}}
+        {{- end }}
+        {{- if .Values.csiNodepluginRclone.rclone.metrics.host }}
+        - --metrics-host={{.Values.csiNodepluginRclone.rclone.metrics.host}}
+        {{- end }}
+        {{- if .Values.csiNodepluginRclone.rclone.metrics.port }}
+        - --metrics-port={{.Values.csiNodepluginRclone.rclone.metrics.port}}
+        {{- end }}
         - node
         - --nodeid=$(NODE_ID)
         - --endpoint=$(CSI_ENDPOINT)
@@ -98,13 +107,18 @@ spec:
         image: {{ .Values.csiNodepluginRclone.rclone.image.repository }}:{{ .Values.csiNodepluginRclone.rclone.image.tag | default .Chart.AppVersion }}
         imagePullPolicy: {{ .Values.csiNodepluginRclone.rclone.imagePullPolicy }}
         resources:
-          {{- toYaml .Values.csiControllerRclone.rclone.resources | nindent 12 }}
+          {{- toYaml .Values.csiNodepluginRclone.rclone.resources | nindent 12 }}
         securityContext: {{- toYaml .Values.csiNodepluginRclone.rclone.containerSecurityContext
           | nindent 10 }}
         ports:
           - containerPort: 9808
             name: healthz
             protocol: TCP
+        {{- if .Values.csiNodepluginRclone.rclone.metrics.port }}
+          - containerPort: {{ .Values.csiNodepluginRclone.rclone.metrics.port }}
+            name: metrics
+            protocol: TCP
+        {{- end }}
         livenessProbe:
           failureThreshold: 5
           httpGet:

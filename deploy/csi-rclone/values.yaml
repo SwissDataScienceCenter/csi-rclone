@@ -26,6 +26,11 @@ csiControllerRclone:
     # If set, used to set GOMEMLIMIT, it should be strictly lower than
     # limits.memory to prevent OOMkills
     #goMemLimit: 115Mi
+    # Prometheus metrics
+    metrics:
+      enable: true
+#      host: localhost
+      port: 80
   replicas: 1
   serviceAccount:
     annotations: {}
@@ -62,6 +67,11 @@ csiNodepluginRclone:
     # If set, used to set GOMEMLIMIT, it should be strictly lower than
     # limits.memory to prevent OOMkills
     #goMemLimit: 115Mi
+    # Prometheus metrics
+    metrics:
+      enable: true
+#      host: localhost
+      port: 80
     # Options to configure rclone's caching with VFS
     cache:
       # The location of the cache directory

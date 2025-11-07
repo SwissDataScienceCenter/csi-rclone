@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/SwissDataScienceCenter/csi-rclone/pkg/metrics"
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/rclone"
 	"github.com/spf13/cobra"
 	"k8s.io/klog"
@@ -13,10 +14,13 @@ import (
 )
 
 var (
-	endpoint  string
-	nodeID    string
-	cacheDir  string
-	cacheSize string
+	endpoint            string
+	nodeID              string
+	cacheDir            string
+	cacheSize           string
+	metricsServerConfig metrics.ServerConfig
+	metricsServer       *metrics.Server
+	meters              []metrics.Observable
 )
 
 func init() {
@@ -29,6 +33,7 @@ func main() {
 		Use:   "rclone",
 		Short: "CSI based rclone driver",
 	}
+	metricsServerConfig.CommandLineParameters(root)
 
 	runCmd := &cobra.Command{
 		Use:   "run",
@@ -73,6 +78,13 @@ func main() {
 	root.AddCommand(versionCmd)
 
 	root.ParseFlags(os.Args[1:])
+
+	if metricsServerConfig.IsEnabled() {
+		metricsServer = metricsServerConfig.NewServer(meters, 1*time.Second, 5*time.Second)
+		go metricsServer.ListenAndServe()
+		defer metricsServer.Shutdown()
+	}
+
 	if err := root.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "%s", err.Error())
 		os.Exit(1)
@@ -91,6 +103,7 @@ func handleNode() {
 	if err != nil {
 		panic(err)
 	}
+	ns.AppendMetrics(&meters)
 	d.WithNodeServer(ns)
 	err = d.Run()
 	if err != nil {
@@ -101,6 +114,7 @@ func handleNode() {
 func handleController() {
 	d := rclone.NewDriver(nodeID, endpoint)
 	cs := rclone.NewControllerServer(d.CSIDriver)
+	cs.AppendMetrics(&meters)
 	d.WithControllerServer(cs)
 	err := d.Run()
 	if err != nil {
