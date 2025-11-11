@@ -19,7 +19,6 @@ var (
 	cacheDir            string
 	cacheSize           string
 	metricsServerConfig metrics.ServerConfig
-	metricsServer       *metrics.Server
 	meters              []metrics.Observable
 )
 
@@ -80,7 +79,7 @@ func main() {
 	root.ParseFlags(os.Args[1:])
 
 	if metricsServerConfig.IsEnabled() {
-		metricsServer = metricsServerConfig.NewServer(meters, 1*time.Second, 5*time.Second)
+		metricsServer := metricsServerConfig.NewServer(&meters, 1*time.Second, 5*time.Second)
 		go metricsServer.ListenAndServe()
 		defer metricsServer.Shutdown()
 	}

@@ -40,7 +40,7 @@ func (config *ServerConfig) CommandLineParameters(root *cobra.Command) {
 	config.pathPrefix = "/metrics"
 }
 
-func (config *ServerConfig) NewServer(meters []Observable, pollDelay, shutdownTimeout time.Duration) *Server {
+func (config *ServerConfig) NewServer(meters *[]Observable, pollDelay, shutdownTimeout time.Duration) *Server {
 	mux := http.NewServeMux()
 	mux.Handle(config.pathPrefix, promhttp.Handler())
 
@@ -54,7 +54,7 @@ func (config *ServerConfig) NewServer(meters []Observable, pollDelay, shutdownTi
 
 	server.Watcher.Poll(
 		func() {
-			for _, observer := range meters {
+			for _, observer := range *meters {
 				observer()
 			}
 		},
