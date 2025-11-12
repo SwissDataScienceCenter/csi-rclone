@@ -106,10 +106,10 @@ func (cs *controllerServer) AppendMetrics(meters *[]metrics.Observable) {
 		Name: "rclone_active_volume_count",
 		Help: "Number of active (Mounted) volumes.",
 	})
-
 	*meters = append(*meters,
 		func() { meter.Set(float64(len(cs.active_volumes))) },
 	)
+	prometheus.MustRegister(meter)
 }
 
 func (d *Driver) WithNodeServer(ns *nodeServer) *Driver {
