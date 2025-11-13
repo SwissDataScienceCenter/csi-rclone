@@ -102,7 +102,7 @@ func handleNode() {
 	if err != nil {
 		panic(err)
 	}
-	ns.AppendMetrics(&meters)
+	meters = append(meters, ns.Metrics()...)
 	d.WithNodeServer(ns)
 	err = d.Run()
 	if err != nil {
@@ -113,7 +113,7 @@ func handleNode() {
 func handleController() {
 	d := rclone.NewDriver(nodeID, endpoint)
 	cs := rclone.NewControllerServer(d.CSIDriver)
-	cs.AppendMetrics(&meters)
+	meters = append(meters, cs.Metrics()...)
 	d.WithControllerServer(cs)
 	err := d.Run()
 	if err != nil {

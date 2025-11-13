@@ -96,20 +96,27 @@ func NewControllerServer(csiDriver *csicommon.CSIDriver) *controllerServer {
 	}
 }
 
-func (ns *nodeServer) AppendMetrics(meters *[]metrics.Observable) {
+func (ns *nodeServer) Metrics() []metrics.Observable {
+	var meters []metrics.Observable
+
 	// What should we meter?
-	return
+
+	return meters
 }
 
-func (cs *controllerServer) AppendMetrics(meters *[]metrics.Observable) {
+func (cs *controllerServer) Metrics() []metrics.Observable {
+	var meters []metrics.Observable
+
 	meter := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "rclone_active_volume_count",
+		Name: "csi_rclone_active_volume_count",
 		Help: "Number of active (Mounted) volumes.",
 	})
-	*meters = append(*meters,
+	meters = append(meters,
 		func() { meter.Set(float64(len(cs.active_volumes))) },
 	)
 	prometheus.MustRegister(meter)
+
+	return meters
 }
 
 func (d *Driver) WithNodeServer(ns *nodeServer) *Driver {
