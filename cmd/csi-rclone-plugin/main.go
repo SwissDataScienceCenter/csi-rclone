@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/metrics"
@@ -78,10 +81,13 @@ func main() {
 
 	root.ParseFlags(os.Args[1:])
 
-	if metricsServerConfig.IsEnabled() {
-		metricsServer := metricsServerConfig.NewServer(&meters, 1*time.Second, 5*time.Second)
+	if metricsServerConfig.Enable {
+		// Gracefully exit the metrics background servers
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+		defer stop()
+
+		metricsServer := metricsServerConfig.NewServer(ctx, 5*time.Second, 30*time.Second, &meters)
 		go metricsServer.ListenAndServe()
-		defer metricsServer.Shutdown()
 	}
 
 	if err := root.Execute(); err != nil {
