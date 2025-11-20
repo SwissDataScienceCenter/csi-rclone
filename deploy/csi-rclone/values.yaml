@@ -28,9 +28,11 @@ csiControllerRclone:
     goMemLimit: # 115Mi
     # Prometheus metrics
     metrics:
-      enable: true
+      enabled: true
       host: # localhost
-      port: 80
+      port: 9090
+      pathPrefix: # /metrics
+      pollPeriod: # 30s
   replicas: 1
   serviceAccount:
     annotations: {}
@@ -69,9 +71,11 @@ csiNodepluginRclone:
     goMemLimit: # 115Mi
     # Prometheus metrics
     metrics:
-      enable: true
+      enabled: true
       host: # localhost
-      port: 80
+      port: 9090
+      pathPrefix: # /metrics
+      pollPeriod: # 30s
     # Options to configure rclone's caching with VFS
     cache:
       # The location of the cache directory

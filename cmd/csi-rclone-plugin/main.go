@@ -17,12 +17,11 @@ import (
 )
 
 var (
-	endpoint            string
-	nodeID              string
-	cacheDir            string
-	cacheSize           string
-	metricsServerConfig metrics.ServerConfig
-	meters              []metrics.Observable
+	endpoint  string
+	nodeID    string
+	cacheDir  string
+	cacheSize string
+	meters    []metrics.Observable
 )
 
 func init() {
@@ -30,6 +29,14 @@ func init() {
 }
 
 func main() {
+	metricsServerConfig := metrics.ServerConfig{
+		Host:            "localhost",
+		Port:            9090,
+		PathPrefix:      "/metrics",
+		PollPeriod:      30 * time.Second,
+		ShutdownTimeout: 5 * time.Second,
+		Enabled:         false,
+	}
 
 	root := &cobra.Command{
 		Use:   "rclone",
@@ -81,12 +88,12 @@ func main() {
 
 	root.ParseFlags(os.Args[1:])
 
-	if metricsServerConfig.Enable {
+	if metricsServerConfig.Enabled {
 		// Gracefully exit the metrics background servers
 		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 		defer stop()
 
-		metricsServer := metricsServerConfig.NewServer(ctx, 5*time.Second, 30*time.Second, &meters)
+		metricsServer := metricsServerConfig.NewServer(ctx, &meters)
 		go metricsServer.ListenAndServe()
 	}
 

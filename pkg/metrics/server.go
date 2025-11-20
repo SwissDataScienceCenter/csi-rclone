@@ -62,30 +62,33 @@ func poll(ctx context.Context, period time.Duration, observe Observable) {
 }
 
 type ServerConfig struct {
-	host       string
-	port       int16
-	pathPrefix string
-	Enable     bool
+	Host            string
+	Port            int16
+	PathPrefix      string
+	PollPeriod      time.Duration
+	ShutdownTimeout time.Duration
+	Enabled         bool
 }
 
 func (config *ServerConfig) CommandLineParameters(root *cobra.Command) {
-	root.PersistentFlags().StringVar(&config.host, "metrics-host", "localhost", "Host name or ip address for Prometheus metrics")
-	root.PersistentFlags().Int16Var(&config.port, "metrics-port", 80, "Port for Prometheus metrics")
-	root.PersistentFlags().BoolVar(&config.Enable, "metrics-enable", false, "Enable Prometheus metrics")
-
-	config.pathPrefix = "/metrics"
+	root.PersistentFlags().StringVar(&config.Host, "metrics-host", config.Host, "Host name or ip address for Prometheus metrics")
+	root.PersistentFlags().Int16Var(&config.Port, "metrics-port", config.Port, "Port for Prometheus metrics")
+	root.PersistentFlags().StringVar(&config.PathPrefix, "metrics-path-prefix", config.PathPrefix, "Path prefix for Prometheus metrics")
+	root.PersistentFlags().DurationVar(&config.PollPeriod, "metrics-poll-period", config.PollPeriod, "Polling period for Prometheus metrics updates")
+	root.PersistentFlags().DurationVar(&config.ShutdownTimeout, "metrics-shutdown-timeout", config.ShutdownTimeout, "Shutdown timeout of the Prometheus metrics server")
+	root.PersistentFlags().BoolVar(&config.Enabled, "metrics-enabled", config.Enabled, "Prometheus metrics state")
 }
 
-func (config *ServerConfig) NewServer(ctx context.Context, shutdownTimeout, pollPeriod time.Duration, meters *[]Observable) *Server {
+func (config *ServerConfig) NewServer(ctx context.Context, meters *[]Observable) *Server {
 	mux := http.NewServeMux()
-	mux.Handle(config.pathPrefix, promhttp.Handler())
+	mux.Handle(config.PathPrefix, promhttp.Handler())
 
 	server := Server{
-		http:             http.Server{Addr: fmt.Sprintf("%s:%d", config.host, config.port), Handler: mux},
+		http:             http.Server{Addr: fmt.Sprintf("%s:%d", config.Host, config.Port), Handler: mux},
 		shutdownFinished: make(chan struct{}),
 	}
 
-	go poll(ctx, pollPeriod,
+	go poll(ctx, config.PollPeriod,
 		func() {
 			for _, observer := range *meters {
 				observer()
@@ -93,7 +96,7 @@ func (config *ServerConfig) NewServer(ctx context.Context, shutdownTimeout, poll
 		},
 	)
 
-	go server.shutdown(ctx, shutdownTimeout)
+	go server.shutdown(ctx, config.ShutdownTimeout)
 
 	return &server
 }

@@ -60,14 +60,20 @@ spec:
       - name: rclone
         args:
         - run
-        {{- if .Values.csiNodepluginRclone.rclone.metrics.enable }}
-        - --metrics-enable={{.Values.csiNodepluginRclone.rclone.metrics.enable}}
+        {{- if .Values.csiNodepluginRclone.rclone.metrics.enabled }}
+        - --metrics-enabled={{.Values.csiNodepluginRclone.rclone.metrics.enabled}}
         {{- end }}
         {{- if .Values.csiNodepluginRclone.rclone.metrics.host }}
         - --metrics-host={{.Values.csiNodepluginRclone.rclone.metrics.host}}
         {{- end }}
         {{- if .Values.csiNodepluginRclone.rclone.metrics.port }}
         - --metrics-port={{.Values.csiNodepluginRclone.rclone.metrics.port}}
+        {{- end }}
+        {{- if .Values.csiNodepluginRclone.rclone.metrics.pathPrefix }}
+        - --metrics-path-prefix={{.Values.csiNodepluginRclone.rclone.metrics.pathPrefix}}
+        {{- end }}
+        {{- if .Values.csiNodepluginRclone.rclone.metrics.pollPeriod }}
+        - --metrics-path-prefix={{.Values.csiNodepluginRclone.rclone.metrics.pollPeriod}}
         {{- end }}
         - node
         - --nodeid=$(NODE_ID)
