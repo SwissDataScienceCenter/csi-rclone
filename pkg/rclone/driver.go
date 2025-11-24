@@ -7,8 +7,10 @@ import (
 	"sync"
 
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/kube"
+	"github.com/SwissDataScienceCenter/csi-rclone/pkg/metrics"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	csicommon "github.com/kubernetes-csi/drivers/pkg/csi-common"
+	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/klog"
 	"k8s.io/utils/mount"
 
@@ -92,6 +94,29 @@ func NewControllerServer(csiDriver *csicommon.CSIDriver) *controllerServer {
 		active_volumes:          map[string]int64{},
 		mutex:                   sync.RWMutex{},
 	}
+}
+
+func (ns *nodeServer) Metrics() []metrics.Observable {
+	var meters []metrics.Observable
+
+	// What should we meter?
+
+	return meters
+}
+
+func (cs *controllerServer) Metrics() []metrics.Observable {
+	var meters []metrics.Observable
+
+	meter := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "csi_rclone_active_volume_count",
+		Help: "Number of active (Mounted) volumes.",
+	})
+	meters = append(meters,
+		func() { meter.Set(float64(len(cs.active_volumes))) },
+	)
+	prometheus.MustRegister(meter)
+
+	return meters
 }
 
 func (d *Driver) WithNodeServer(ns *nodeServer) *Driver {

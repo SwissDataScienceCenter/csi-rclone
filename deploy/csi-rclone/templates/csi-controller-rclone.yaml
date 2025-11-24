@@ -59,6 +59,21 @@ spec:
       - name: rclone
         args:
         - run
+        {{- if .Values.csiControllerRclone.rclone.metrics.enabled }}
+        - --metrics-enabled={{.Values.csiControllerRclone.rclone.metrics.enabled}}
+        {{- end }}
+        {{- if .Values.csiControllerRclone.rclone.metrics.host }}
+        - --metrics-host={{.Values.csiControllerRclone.rclone.metrics.host}}
+        {{- end }}
+        {{- if .Values.csiControllerRclone.rclone.metrics.port }}
+        - --metrics-port={{.Values.csiControllerRclone.rclone.metrics.port}}
+        {{- end }}
+        {{- if .Values.csiControllerRclone.rclone.metrics.pathPrefix }}
+        - --metrics-path-prefix={{.Values.csiControllerRclone.rclone.metrics.pathPrefix}}
+        {{- end }}
+        {{- if .Values.csiControllerRclone.rclone.metrics.pollPeriod }}
+        - --metrics-path-prefix={{.Values.csiControllerRclone.rclone.metrics.pollPeriod}}
+        {{- end }}
         - controller
         - --nodeid=$(NODE_ID)
         - --endpoint=$(CSI_ENDPOINT)
@@ -73,6 +88,10 @@ spec:
           value: "unix://plugin/csi.sock"
         - name: KUBERNETES_CLUSTER_DOMAIN
           value: {{ quote .Values.kubernetesClusterDomain }}
+        {{- if .Values.csiControllerRclone.rclone.goMemLimit }}
+        - name: GOMEMLIMIT
+          value: {{ .Values.csiControllerRclone.rclone.goMemLimit }}
+        {{- end }}
         image: {{ .Values.csiControllerRclone.rclone.image.repository }}:{{ .Values.csiControllerRclone.rclone.image.tag | default .Chart.AppVersion }}
         imagePullPolicy: {{ .Values.csiControllerRclone.rclone.imagePullPolicy }}
         resources:
@@ -81,6 +100,11 @@ spec:
         - containerPort: 9808
           name: healthz
           protocol: TCP
+        {{- if .Values.csiControllerRclone.rclone.metrics.port }}
+        - containerPort: {{.Values.csiControllerRclone.rclone.metrics.port }}
+          name: metrics
+          protocol: TCP
+        {{- end }}
         livenessProbe:
           failureThreshold: 5
           httpGet:
