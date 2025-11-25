@@ -34,7 +34,7 @@ type Operations interface {
 	Unmount(ctx context.Context, volumeId string, targetPath string) error
 	GetVolumeById(ctx context.Context, volumeId string) (*RcloneVolume, error)
 	Cleanup() error
-	Run() error
+	Run(onDaemonReady func() error) error
 }
 
 type Rclone struct {
@@ -472,10 +472,15 @@ func (r *Rclone) start_daemon() error {
 	return nil
 }
 
-func (r *Rclone) Run() error {
+func (r *Rclone) Run(onDaemonReady func() error) error {
 	err := r.start_daemon()
 	if err != nil {
 		return err
+	}
+	if onDaemonReady != nil {
+		if err := onDaemonReady(); err != nil {
+			klog.Warningf("Error in onDaemonReady callback: %v", err)
+		}
 	}
 	// blocks until the rclone daemon is stopped
 	return r.daemonCmd.Wait()
