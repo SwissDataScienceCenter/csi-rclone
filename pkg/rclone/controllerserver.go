@@ -5,7 +5,9 @@ package rclone
 import (
 	"sync"
 
+	"github.com/SwissDataScienceCenter/csi-rclone/pkg/metrics"
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -20,6 +22,29 @@ type controllerServer struct {
 	*csicommon.DefaultControllerServer
 	active_volumes map[string]int64
 	mutex          sync.RWMutex
+}
+
+func NewControllerServer(csiDriver *csicommon.CSIDriver) *controllerServer {
+	return &controllerServer{
+		DefaultControllerServer: csicommon.NewDefaultControllerServer(csiDriver),
+		active_volumes:          map[string]int64{},
+		mutex:                   sync.RWMutex{},
+	}
+}
+
+func (cs *controllerServer) Metrics() []metrics.Observable {
+	var meters []metrics.Observable
+
+	meter := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "csi_rclone_active_volume_count",
+		Help: "Number of active (Mounted) volumes.",
+	})
+	meters = append(meters,
+		func() { meter.Set(float64(len(cs.active_volumes))) },
+	)
+	prometheus.MustRegister(meter)
+
+	return meters
 }
 
 func (cs *controllerServer) ValidateVolumeCapabilities(ctx context.Context, req *csi.ValidateVolumeCapabilitiesRequest) (*csi.ValidateVolumeCapabilitiesResponse, error) {
