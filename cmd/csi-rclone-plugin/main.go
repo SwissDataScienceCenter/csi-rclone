@@ -48,34 +48,10 @@ func main() {
 		Use:   "run",
 		Short: "Start the CSI driver.",
 	}
-	root.AddCommand(runCmd)
+	nodeCommandLineParameters(runCmd)
+	controllerCommandLineParameters(runCmd)
 
-	runNode := &cobra.Command{
-		Use:   "node",
-		Short: "Start the CSI driver node service - expected to run in a daemonset on every node.",
-		Run: func(cmd *cobra.Command, args []string) {
-			handleNode()
-		},
-	}
-	runNode.PersistentFlags().StringVar(&nodeID, "nodeid", "", "node id")
-	runNode.MarkPersistentFlagRequired("nodeid")
-	runNode.PersistentFlags().StringVar(&endpoint, "endpoint", "", "CSI endpoint")
-	runNode.MarkPersistentFlagRequired("endpoint")
-	runNode.PersistentFlags().StringVar(&cacheDir, "cachedir", "", "cache dir")
-	runNode.PersistentFlags().StringVar(&cacheSize, "cachesize", "", "cache size")
-	runCmd.AddCommand(runNode)
-	runController := &cobra.Command{
-		Use:   "controller",
-		Short: "Start the CSI driver controller.",
-		Run: func(cmd *cobra.Command, args []string) {
-			handleController()
-		},
-	}
-	runController.PersistentFlags().StringVar(&nodeID, "nodeid", "", "node id")
-	runController.MarkPersistentFlagRequired("nodeid")
-	runController.PersistentFlags().StringVar(&endpoint, "endpoint", "", "CSI endpoint")
-	runController.MarkPersistentFlagRequired("endpoint")
-	runCmd.AddCommand(runController)
+	root.AddCommand(runCmd)
 
 	versionCmd := &cobra.Command{
 		Use:   "version",
@@ -123,6 +99,23 @@ func handleNode() {
 	}
 }
 
+func nodeCommandLineParameters(runCmd *cobra.Command) {
+	runNode := &cobra.Command{
+		Use:   "node",
+		Short: "Start the CSI driver node service - expected to run in a daemonset on every node.",
+		Run: func(cmd *cobra.Command, args []string) {
+			handleNode()
+		},
+	}
+	runNode.PersistentFlags().StringVar(&nodeID, "nodeid", "", "node id")
+	runNode.MarkPersistentFlagRequired("nodeid")
+	runNode.PersistentFlags().StringVar(&endpoint, "endpoint", "", "CSI endpoint")
+	runNode.MarkPersistentFlagRequired("endpoint")
+	runNode.PersistentFlags().StringVar(&cacheDir, "cachedir", "", "cache dir")
+	runNode.PersistentFlags().StringVar(&cacheSize, "cachesize", "", "cache size")
+	runCmd.AddCommand(runNode)
+}
+
 func handleController() {
 	d := rclone.NewDriver(nodeID, endpoint)
 	cs := rclone.NewControllerServer(d.CSIDriver)
@@ -132,6 +125,21 @@ func handleController() {
 	if err != nil {
 		panic(err)
 	}
+}
+
+func controllerCommandLineParameters(runCmd *cobra.Command) {
+	runController := &cobra.Command{
+		Use:   "controller",
+		Short: "Start the CSI driver controller.",
+		Run: func(cmd *cobra.Command, args []string) {
+			handleController()
+		},
+	}
+	runController.PersistentFlags().StringVar(&nodeID, "nodeid", "", "node id")
+	runController.MarkPersistentFlagRequired("nodeid")
+	runController.PersistentFlags().StringVar(&endpoint, "endpoint", "", "CSI endpoint")
+	runController.MarkPersistentFlagRequired("endpoint")
+	runCmd.AddCommand(runController)
 }
 
 // unmountOldVols is used to unmount volumes after a restart on a node
