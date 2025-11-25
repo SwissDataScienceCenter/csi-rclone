@@ -12,8 +12,6 @@ import (
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/metrics"
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/rclone"
 	"github.com/spf13/cobra"
-	"k8s.io/klog"
-	mountUtils "k8s.io/mount-utils"
 )
 
 var (
@@ -82,10 +80,6 @@ func main() {
 }
 
 func handleNode() {
-	err := unmountOldVols()
-	if err != nil {
-		klog.Warningf("There was an error when trying to unmount old volumes: %v", err)
-	}
 	d := rclone.NewDriver(nodeID, endpoint)
 	ns, err := rclone.NewNodeServer(d.CSIDriver, cacheDir, cacheSize)
 	if err != nil {
@@ -140,28 +134,4 @@ func controllerCommandLineParameters(runCmd *cobra.Command) {
 	runController.PersistentFlags().StringVar(&endpoint, "endpoint", "", "CSI endpoint")
 	runController.MarkPersistentFlagRequired("endpoint")
 	runCmd.AddCommand(runController)
-}
-
-// unmountOldVols is used to unmount volumes after a restart on a node
-func unmountOldVols() error {
-	const mountType = "fuse.rclone"
-	const unmountTimeout = time.Second * 5
-	klog.Info("Checking for existing mounts")
-	mounter := mountUtils.Mounter{}
-	mounts, err := mounter.List()
-	if err != nil {
-		return err
-	}
-	for _, mount := range mounts {
-		if mount.Type != mountType {
-			continue
-		}
-		err := mounter.UnmountWithForce(mount.Path, unmountTimeout)
-		if err != nil {
-			klog.Warningf("Failed to unmount %s because of %v.", mount.Path, err)
-			continue
-		}
-		klog.Infof("Sucessfully unmounted %s", mount.Path)
-	}
-	return nil
 }

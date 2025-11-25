@@ -2,20 +2,11 @@ package rclone
 
 import (
 	"context"
-	"fmt"
-	"net"
 	"os"
-	"path/filepath"
-	"sync"
 
-	"github.com/SwissDataScienceCenter/csi-rclone/pkg/kube"
-	"github.com/SwissDataScienceCenter/csi-rclone/pkg/metrics"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	csicommon "github.com/kubernetes-csi/drivers/pkg/csi-common"
 	"k8s.io/klog"
-	"k8s.io/utils/mount"
-
-	utilexec "k8s.io/utils/exec"
 )
 
 type Driver struct {
@@ -32,18 +23,6 @@ type Driver struct {
 var (
 	DriverVersion = "SwissDataScienceCenter"
 )
-
-func getFreePort() (port int, err error) {
-	var a *net.TCPAddr
-	if a, err = net.ResolveTCPAddr("tcp", "localhost:0"); err == nil {
-		var l *net.TCPListener
-		if l, err = net.ListenTCP("tcp", a); err == nil {
-			defer l.Close()
-			return l.Addr().(*net.TCPAddr).Port, nil
-		}
-	}
-	return
-}
 
 func NewDriver(nodeID, endpoint string) *Driver {
 	driverName := os.Getenv("DRIVER_NAME")
@@ -65,57 +44,6 @@ func NewDriver(nodeID, endpoint string) *Driver {
 		})
 
 	return d
-}
-
-func NewNodeServer(csiDriver *csicommon.CSIDriver, cacheDir string, cacheSize string) (*nodeServer, error) {
-	kubeClient, err := kube.GetK8sClient()
-	if err != nil {
-		return nil, err
-	}
-
-	rclonePort, err := getFreePort()
-	if err != nil {
-		return nil, fmt.Errorf("Cannot get a free TCP port to run rclone")
-	}
-	rcloneOps := NewRclone(kubeClient, rclonePort, cacheDir, cacheSize)
-
-	// Use kubelet plugin directory for state persistence
-	stateFile := "/var/lib/kubelet/plugins/csi-rclone/mounted_volumes.json"
-
-	ns := &nodeServer{
-		DefaultNodeServer: csicommon.NewDefaultNodeServer(csiDriver),
-		mounter: &mount.SafeFormatAndMount{
-			Interface: mount.New(""),
-			Exec:      utilexec.New(),
-		},
-		RcloneOps:      rcloneOps,
-		mountedVolumes: make(map[string]MountedVolume),
-		mutex:          &sync.Mutex{},
-		stateFile:      stateFile,
-	}
-
-	// Ensure the folder exists
-	if err = os.MkdirAll(filepath.Dir(ns.stateFile), 0755); err != nil {
-		return nil, fmt.Errorf("failed to create state directory: %v", err)
-	}
-
-	// Load persisted state on startup
-	ns.mutex.Lock()
-	defer ns.mutex.Unlock()
-
-	if ns.mountedVolumes, err = readVolumeMap(ns.stateFile); err != nil {
-		klog.Warningf("Failed to load persisted volume state: %v", err)
-	}
-
-	return ns, nil
-}
-
-func (ns *nodeServer) Metrics() []metrics.Observable {
-	var meters []metrics.Observable
-
-	// What should we meter?
-
-	return meters
 }
 
 func (d *Driver) WithNodeServer(ns *nodeServer) *Driver {

@@ -10,24 +10,28 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
 
-	"gopkg.in/ini.v1"
-	v1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/klog"
-
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/kube"
+	"github.com/SwissDataScienceCenter/csi-rclone/pkg/metrics"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/fernet/fernet-go"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"gopkg.in/ini.v1"
+	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/klog"
+	mountutils "k8s.io/mount-utils"
+	"k8s.io/utils/exec"
 	"k8s.io/utils/mount"
 
 	csicommon "github.com/kubernetes-csi/drivers/pkg/csi-common"
@@ -45,6 +49,99 @@ type nodeServer struct {
 	mountedVolumes map[string]MountedVolume
 	mutex          *sync.Mutex
 	stateFile      string
+}
+
+// unmountOldVols is used to unmount volumes after a restart on a node
+func unmountOldVols() error {
+	const mountType = "fuse.rclone"
+	const unmountTimeout = time.Second * 5
+	klog.Info("Checking for existing mounts")
+	mounter := mountutils.Mounter{}
+	mounts, err := mounter.List()
+	if err != nil {
+		return err
+	}
+	for _, mount := range mounts {
+		if mount.Type != mountType {
+			continue
+		}
+		err := mounter.UnmountWithForce(mount.Path, unmountTimeout)
+		if err != nil {
+			klog.Warningf("Failed to unmount %s because of %v.", mount.Path, err)
+			continue
+		}
+		klog.Infof("Sucessfully unmounted %s", mount.Path)
+	}
+	return nil
+}
+
+func getFreePort() (port int, err error) {
+	var a *net.TCPAddr
+	if a, err = net.ResolveTCPAddr("tcp", "localhost:0"); err == nil {
+		var l *net.TCPListener
+		if l, err = net.ListenTCP("tcp", a); err == nil {
+			defer l.Close()
+			return l.Addr().(*net.TCPAddr).Port, nil
+		}
+	}
+	return
+}
+
+func NewNodeServer(csiDriver *csicommon.CSIDriver, cacheDir string, cacheSize string) (*nodeServer, error) {
+	err := unmountOldVols()
+	if err != nil {
+		klog.Warningf("There was an error when trying to unmount old volumes: %v", err)
+		return nil, err
+	}
+
+	kubeClient, err := kube.GetK8sClient()
+	if err != nil {
+		return nil, err
+	}
+
+	rclonePort, err := getFreePort()
+	if err != nil {
+		return nil, fmt.Errorf("Cannot get a free TCP port to run rclone")
+	}
+	rcloneOps := NewRclone(kubeClient, rclonePort, cacheDir, cacheSize)
+
+	// Use kubelet plugin directory for state persistence
+	stateFile := "/var/lib/kubelet/plugins/csi-rclone/mounted_volumes.json"
+
+	ns := &nodeServer{
+		DefaultNodeServer: csicommon.NewDefaultNodeServer(csiDriver),
+		mounter: &mount.SafeFormatAndMount{
+			Interface: mount.New(""),
+			Exec:      exec.New(),
+		},
+		RcloneOps:      rcloneOps,
+		mountedVolumes: make(map[string]MountedVolume),
+		mutex:          &sync.Mutex{},
+		stateFile:      stateFile,
+	}
+
+	// Ensure the folder exists
+	if err = os.MkdirAll(filepath.Dir(ns.stateFile), 0755); err != nil {
+		return nil, fmt.Errorf("failed to create state directory: %v", err)
+	}
+
+	// Load persisted state on startup
+	ns.mutex.Lock()
+	defer ns.mutex.Unlock()
+
+	if ns.mountedVolumes, err = readVolumeMap(ns.stateFile); err != nil {
+		klog.Warningf("Failed to load persisted volume state: %v", err)
+	}
+
+	return ns, nil
+}
+
+func (ns *nodeServer) Metrics() []metrics.Observable {
+	var meters []metrics.Observable
+
+	// What should we meter?
+
+	return meters
 }
 
 type MountedVolume struct {
