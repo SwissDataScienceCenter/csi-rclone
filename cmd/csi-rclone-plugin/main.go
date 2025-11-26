@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
+	"github.com/SwissDataScienceCenter/csi-rclone/pkg/metrics"
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/rclone"
 	"github.com/spf13/cobra"
 	"k8s.io/klog"
@@ -17,6 +21,7 @@ var (
 	nodeID    string
 	cacheDir  string
 	cacheSize string
+	meters    []metrics.Observable
 )
 
 func init() {
@@ -24,11 +29,20 @@ func init() {
 }
 
 func main() {
+	metricsServerConfig := metrics.ServerConfig{
+		Host:            "localhost",
+		Port:            9090,
+		PathPrefix:      "/metrics",
+		PollPeriod:      30 * time.Second,
+		ShutdownTimeout: 5 * time.Second,
+		Enabled:         false,
+	}
 
 	root := &cobra.Command{
 		Use:   "rclone",
 		Short: "CSI based rclone driver",
 	}
+	metricsServerConfig.CommandLineParameters(root)
 
 	runCmd := &cobra.Command{
 		Use:   "run",
@@ -73,6 +87,16 @@ func main() {
 	root.AddCommand(versionCmd)
 
 	root.ParseFlags(os.Args[1:])
+
+	if metricsServerConfig.Enabled {
+		// Gracefully exit the metrics background servers
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+		defer stop()
+
+		metricsServer := metricsServerConfig.NewServer(ctx, &meters)
+		go metricsServer.ListenAndServe()
+	}
+
 	if err := root.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "%s", err.Error())
 		os.Exit(1)
@@ -91,6 +115,7 @@ func handleNode() {
 	if err != nil {
 		panic(err)
 	}
+	meters = append(meters, ns.Metrics()...)
 	d.WithNodeServer(ns)
 	err = d.Run()
 	if err != nil {
@@ -101,6 +126,7 @@ func handleNode() {
 func handleController() {
 	d := rclone.NewDriver(nodeID, endpoint)
 	cs := rclone.NewControllerServer(d.CSIDriver)
+	meters = append(meters, cs.Metrics()...)
 	d.WithControllerServer(cs)
 	err := d.Run()
 	if err != nil {
