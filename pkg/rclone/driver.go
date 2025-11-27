@@ -78,14 +78,26 @@ func NewNodeServer(csiDriver *csicommon.CSIDriver, cacheDir string, cacheSize st
 	}
 	rcloneOps := NewRclone(kubeClient, rclonePort, cacheDir, cacheSize)
 
-	return &nodeServer{
+	// Use kubelet plugin directory for state persistence
+	stateFile := "/var/lib/kubelet/plugins/csi-rclone/mounted_volumes.json"
+
+	ns := &nodeServer{
 		DefaultNodeServer: csicommon.NewDefaultNodeServer(csiDriver),
 		mounter: &mount.SafeFormatAndMount{
 			Interface: mount.New(""),
 			Exec:      utilexec.New(),
 		},
-		RcloneOps: rcloneOps,
-	}, nil
+		RcloneOps:       rcloneOps,
+		mountedVolumes: make(map[string]*MountedVolume),
+		stateFile:      stateFile,
+	}
+
+	// Load persisted state on startup
+	if err := ns.loadState(); err != nil {
+		klog.Warningf("Failed to load persisted volume state: %v", err)
+	}
+
+	return ns, nil
 }
 
 func NewControllerServer(csiDriver *csicommon.CSIDriver) *controllerServer {
@@ -139,7 +151,13 @@ func (d *Driver) Run() error {
 	)
 	d.server = s
 	if d.ns != nil && d.ns.RcloneOps != nil {
-		return d.ns.RcloneOps.Run()
+		onDaemonReady := func() error {
+			if d.ns != nil {
+				return d.ns.remountTrackedVolumes(context.Background())
+			}
+			return nil
+		}
+		return d.ns.RcloneOps.Run(onDaemonReady)
 	}
 	s.Wait()
 	return nil
