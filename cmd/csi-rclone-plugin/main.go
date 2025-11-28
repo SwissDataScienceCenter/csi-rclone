@@ -11,8 +11,6 @@ import (
 
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/metrics"
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/rclone"
-	"github.com/container-storage-interface/spec/lib/go/csi"
-	csicommon "github.com/kubernetes-csi/drivers/pkg/csi-common"
 	"github.com/spf13/cobra"
 	"k8s.io/klog"
 )
@@ -56,7 +54,7 @@ func main() {
 		Use:   "run",
 		Short: "Start the CSI driver.",
 	}
-	exitOnError(NodeCommandLineParameters(runCmd, &meters, &nodeID, &endpoint, &cacheDir, &cacheSize))
+	exitOnError(rclone.NodeCommandLineParameters(runCmd, &meters, &nodeID, &endpoint, &cacheDir, &cacheSize))
 	exitOnError(rclone.ControllerCommandLineParameters(runCmd, &meters, &nodeID, &endpoint))
 
 	root.AddCommand(runCmd)
@@ -84,42 +82,4 @@ func main() {
 	exitOnError(root.Execute())
 
 	os.Exit(0)
-}
-
-func NodeCommandLineParameters(runCmd *cobra.Command, meters *[]metrics.Observable, nodeID, endpoint, cacheDir, cacheSize *string) error {
-	runNode := &cobra.Command{
-		Use:   "node",
-		Short: "Start the CSI driver node service - expected to run in a daemonset on every node.",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			//Pointers are passed by value, so we use a pointer to a pointer to be able to retrieve the allocated server in the
-			//run closure
-			var nsDoublePointer **rclone.NodeServer
-			return rclone.Run(context.Background(), nodeID, endpoint,
-				func(csiDriver *csicommon.CSIDriver) (csi.ControllerServer, csi.NodeServer, error) {
-					ns, err := rclone.NewNodeServer(csiDriver, *cacheDir, *cacheSize)
-					if err != nil {
-						return nil, nil, err
-					}
-					*meters = append(*meters, ns.Metrics()...)
-					*nsDoublePointer = ns
-					return nil, ns, nil
-				},
-				func(ctx context.Context) error {
-					return (*nsDoublePointer).Run(ctx)
-				},
-			)
-		},
-	}
-	runNode.PersistentFlags().StringVar(nodeID, "nodeid", "", "node id")
-	if err := runNode.MarkPersistentFlagRequired("nodeid"); err != nil {
-		return err
-	}
-	runNode.PersistentFlags().StringVar(endpoint, "endpoint", "", "CSI endpoint")
-	if err := runNode.MarkPersistentFlagRequired("endpoint"); err != nil {
-		return err
-	}
-	runNode.PersistentFlags().StringVar(cacheDir, "cachedir", "", "cache dir")
-	runNode.PersistentFlags().StringVar(cacheSize, "cachesize", "", "cache size")
-	runCmd.AddCommand(runNode)
-	return nil
 }
