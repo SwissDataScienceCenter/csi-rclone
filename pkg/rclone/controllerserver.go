@@ -18,21 +18,21 @@ import (
 
 const secretAnnotationName = "csi-rclone.dev/secretName"
 
-type controllerServer struct {
+type ControllerServer struct {
 	*csicommon.DefaultControllerServer
 	active_volumes map[string]int64
 	mutex          sync.RWMutex
 }
 
-func NewControllerServer(csiDriver *csicommon.CSIDriver) *controllerServer {
-	return &controllerServer{
+func NewControllerServer(csiDriver *csicommon.CSIDriver) *ControllerServer {
+	return &ControllerServer{
 		DefaultControllerServer: csicommon.NewDefaultControllerServer(csiDriver),
 		active_volumes:          map[string]int64{},
 		mutex:                   sync.RWMutex{},
 	}
 }
 
-func (cs *controllerServer) Metrics() []metrics.Observable {
+func (cs *ControllerServer) Metrics() []metrics.Observable {
 	var meters []metrics.Observable
 
 	meter := prometheus.NewGauge(prometheus.GaugeOpts{
@@ -47,7 +47,7 @@ func (cs *controllerServer) Metrics() []metrics.Observable {
 	return meters
 }
 
-func (cs *controllerServer) ValidateVolumeCapabilities(ctx context.Context, req *csi.ValidateVolumeCapabilitiesRequest) (*csi.ValidateVolumeCapabilitiesResponse, error) {
+func (cs *ControllerServer) ValidateVolumeCapabilities(ctx context.Context, req *csi.ValidateVolumeCapabilitiesRequest) (*csi.ValidateVolumeCapabilitiesResponse, error) {
 	volId := req.GetVolumeId()
 	if len(volId) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "ValidateVolumeCapabilities must be provided volume id")
@@ -71,17 +71,17 @@ func (cs *controllerServer) ValidateVolumeCapabilities(ctx context.Context, req 
 }
 
 // Attaching Volume
-func (cs *controllerServer) ControllerPublishVolume(ctx context.Context, req *csi.ControllerPublishVolumeRequest) (*csi.ControllerPublishVolumeResponse, error) {
+func (cs *ControllerServer) ControllerPublishVolume(ctx context.Context, req *csi.ControllerPublishVolumeRequest) (*csi.ControllerPublishVolumeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ControllerPublishVolume not implemented")
 }
 
 // Detaching Volume
-func (cs *controllerServer) ControllerUnpublishVolume(ctx context.Context, req *csi.ControllerUnpublishVolumeRequest) (*csi.ControllerUnpublishVolumeResponse, error) {
+func (cs *ControllerServer) ControllerUnpublishVolume(ctx context.Context, req *csi.ControllerUnpublishVolumeRequest) (*csi.ControllerUnpublishVolumeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ControllerUnpublishVolume not implemented")
 }
 
 // Provisioning Volumes
-func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
+func (cs *ControllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
 	klog.Infof("ControllerCreateVolume: called with args %+v", *req)
 	volumeName := req.GetName()
 	if len(volumeName) == 0 {
@@ -140,7 +140,7 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 }
 
 // Delete Volume
-func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
+func (cs *ControllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
 	volId := req.GetVolumeId()
 	if len(volId) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "DeteleVolume must be provided volume id")
@@ -152,16 +152,16 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 	return &csi.DeleteVolumeResponse{}, nil
 }
 
-func (*controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
+func (*ControllerServer) ControllerExpandVolume(ctx context.Context, req *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ControllerExpandVolume not implemented")
 }
 
-func (cs *controllerServer) ControllerGetVolume(ctx context.Context, req *csi.ControllerGetVolumeRequest) (*csi.ControllerGetVolumeResponse, error) {
+func (cs *ControllerServer) ControllerGetVolume(ctx context.Context, req *csi.ControllerGetVolumeRequest) (*csi.ControllerGetVolumeResponse, error) {
 	return &csi.ControllerGetVolumeResponse{Volume: &csi.Volume{
 		VolumeId: req.VolumeId,
 	}}, nil
 }
 
-func (cs *controllerServer) ControllerModifyVolume(ctx context.Context, req *csi.ControllerModifyVolumeRequest) (*csi.ControllerModifyVolumeResponse, error) {
+func (cs *ControllerServer) ControllerModifyVolume(ctx context.Context, req *csi.ControllerModifyVolumeRequest) (*csi.ControllerModifyVolumeResponse, error) {
 	return &csi.ControllerModifyVolumeResponse{}, nil
 }

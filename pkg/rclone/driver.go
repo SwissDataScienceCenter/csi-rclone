@@ -14,7 +14,7 @@ type Driver struct {
 	endpoint  string
 
 	ns     *nodeServer
-	cs     *controllerServer
+	cs     *ControllerServer
 	cap    []*csi.VolumeCapability_AccessMode
 	cscap  []*csi.ControllerServiceCapability
 	server csicommon.NonBlockingGRPCServer
@@ -51,7 +51,7 @@ func (d *Driver) WithNodeServer(ns *nodeServer) *Driver {
 	return d
 }
 
-func (d *Driver) WithControllerServer(cs *controllerServer) *Driver {
+func (d *Driver) WithControllerServer(cs *ControllerServer) *Driver {
 	d.cs = cs
 	return d
 }
