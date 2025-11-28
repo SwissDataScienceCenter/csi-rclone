@@ -9,6 +9,7 @@ import (
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/metrics"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/spf13/cobra"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/klog"
@@ -32,7 +33,7 @@ func NewControllerServer(csiDriver *csicommon.CSIDriver) *ControllerServer {
 	}
 }
 
-func (cs *ControllerServer) Metrics() []metrics.Observable {
+func (cs *ControllerServer) metrics() []metrics.Observable {
 	var meters []metrics.Observable
 
 	meter := prometheus.NewGauge(prometheus.GaugeOpts{
@@ -45,6 +46,36 @@ func (cs *ControllerServer) Metrics() []metrics.Observable {
 	prometheus.MustRegister(meter)
 
 	return meters
+}
+
+func ControllerCommandLineParameters(runCmd *cobra.Command, meters *[]metrics.Observable, nodeID, endpoint *string) error {
+	runController := &cobra.Command{
+		Use:   "controller",
+		Short: "Start the CSI driver controller.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return Run(context.Background(),
+				nodeID,
+				endpoint,
+				func(csiDriver *csicommon.CSIDriver) (csi.ControllerServer, csi.NodeServer, error) {
+					cs := NewControllerServer(csiDriver)
+					*meters = append(*meters, cs.metrics()...)
+					return cs, nil, nil
+				},
+				func(_ context.Context) error { return nil },
+			)
+		},
+	}
+	runController.PersistentFlags().StringVar(nodeID, "nodeid", "", "node id")
+	if err := runController.MarkPersistentFlagRequired("nodeid"); err != nil {
+		return err
+	}
+	runController.PersistentFlags().StringVar(endpoint, "endpoint", "", "CSI endpoint")
+	if err := runController.MarkPersistentFlagRequired("endpoint"); err != nil {
+		return err
+	}
+
+	runCmd.AddCommand(runController)
+	return nil
 }
 
 func (cs *ControllerServer) ValidateVolumeCapabilities(_ context.Context, req *csi.ValidateVolumeCapabilitiesRequest) (*csi.ValidateVolumeCapabilitiesResponse, error) {

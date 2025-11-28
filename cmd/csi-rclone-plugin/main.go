@@ -57,7 +57,7 @@ func main() {
 		Short: "Start the CSI driver.",
 	}
 	exitOnError(NodeCommandLineParameters(runCmd, &meters, &nodeID, &endpoint, &cacheDir, &cacheSize))
-	exitOnError(ControllerCommandLineParameters(runCmd, &meters, &nodeID, &endpoint))
+	exitOnError(rclone.ControllerCommandLineParameters(runCmd, &meters, &nodeID, &endpoint))
 
 	root.AddCommand(runCmd)
 
@@ -121,35 +121,5 @@ func NodeCommandLineParameters(runCmd *cobra.Command, meters *[]metrics.Observab
 	runNode.PersistentFlags().StringVar(cacheDir, "cachedir", "", "cache dir")
 	runNode.PersistentFlags().StringVar(cacheSize, "cachesize", "", "cache size")
 	runCmd.AddCommand(runNode)
-	return nil
-}
-
-func ControllerCommandLineParameters(runCmd *cobra.Command, meters *[]metrics.Observable, nodeID, endpoint *string) error {
-	runController := &cobra.Command{
-		Use:   "controller",
-		Short: "Start the CSI driver controller.",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return rclone.Run(context.Background(),
-				nodeID,
-				endpoint,
-				func(csiDriver *csicommon.CSIDriver) (csi.ControllerServer, csi.NodeServer, error) {
-					cs := rclone.NewControllerServer(csiDriver)
-					*meters = append(*meters, cs.Metrics()...)
-					return cs, nil, nil
-				},
-				func(_ context.Context) error { return nil },
-			)
-		},
-	}
-	runController.PersistentFlags().StringVar(nodeID, "nodeid", "", "node id")
-	if err := runController.MarkPersistentFlagRequired("nodeid"); err != nil {
-		return err
-	}
-	runController.PersistentFlags().StringVar(endpoint, "endpoint", "", "CSI endpoint")
-	if err := runController.MarkPersistentFlagRequired("endpoint"); err != nil {
-		return err
-	}
-
-	runCmd.AddCommand(runController)
 	return nil
 }
