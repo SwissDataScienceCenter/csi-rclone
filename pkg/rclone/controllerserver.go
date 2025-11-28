@@ -3,12 +3,12 @@
 package rclone
 
 import (
+	"context"
 	"sync"
 
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/metrics"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/klog"
@@ -20,14 +20,14 @@ const secretAnnotationName = "csi-rclone.dev/secretName"
 
 type ControllerServer struct {
 	*csicommon.DefaultControllerServer
-	active_volumes map[string]int64
-	mutex          sync.RWMutex
+	activeVolumes map[string]int64
+	mutex         sync.RWMutex
 }
 
 func NewControllerServer(csiDriver *csicommon.CSIDriver) *ControllerServer {
 	return &ControllerServer{
 		DefaultControllerServer: csicommon.NewDefaultControllerServer(csiDriver),
-		active_volumes:          map[string]int64{},
+		activeVolumes:           map[string]int64{},
 		mutex:                   sync.RWMutex{},
 	}
 }
@@ -40,14 +40,14 @@ func (cs *ControllerServer) Metrics() []metrics.Observable {
 		Help: "Number of active (Mounted) volumes.",
 	})
 	meters = append(meters,
-		func() { meter.Set(float64(len(cs.active_volumes))) },
+		func() { meter.Set(float64(len(cs.activeVolumes))) },
 	)
 	prometheus.MustRegister(meter)
 
 	return meters
 }
 
-func (cs *ControllerServer) ValidateVolumeCapabilities(ctx context.Context, req *csi.ValidateVolumeCapabilitiesRequest) (*csi.ValidateVolumeCapabilitiesResponse, error) {
+func (cs *ControllerServer) ValidateVolumeCapabilities(_ context.Context, req *csi.ValidateVolumeCapabilitiesRequest) (*csi.ValidateVolumeCapabilitiesResponse, error) {
 	volId := req.GetVolumeId()
 	if len(volId) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "ValidateVolumeCapabilities must be provided volume id")
@@ -58,7 +58,7 @@ func (cs *ControllerServer) ValidateVolumeCapabilities(ctx context.Context, req 
 
 	cs.mutex.Lock()
 	defer cs.mutex.Unlock()
-	if _, ok := cs.active_volumes[volId]; !ok {
+	if _, ok := cs.activeVolumes[volId]; !ok {
 		return nil, status.Errorf(codes.NotFound, "Volume %s not found", volId)
 	}
 	return &csi.ValidateVolumeCapabilitiesResponse{
@@ -70,17 +70,17 @@ func (cs *ControllerServer) ValidateVolumeCapabilities(ctx context.Context, req 
 	}, nil
 }
 
-// Attaching Volume
-func (cs *ControllerServer) ControllerPublishVolume(ctx context.Context, req *csi.ControllerPublishVolumeRequest) (*csi.ControllerPublishVolumeResponse, error) {
+// ControllerPublishVolume Attaching Volume
+func (cs *ControllerServer) ControllerPublishVolume(_ context.Context, _ *csi.ControllerPublishVolumeRequest) (*csi.ControllerPublishVolumeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ControllerPublishVolume not implemented")
 }
 
-// Detaching Volume
-func (cs *ControllerServer) ControllerUnpublishVolume(ctx context.Context, req *csi.ControllerUnpublishVolumeRequest) (*csi.ControllerUnpublishVolumeResponse, error) {
+// ControllerUnpublishVolume Detaching Volume
+func (cs *ControllerServer) ControllerUnpublishVolume(_ context.Context, _ *csi.ControllerUnpublishVolumeRequest) (*csi.ControllerUnpublishVolumeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ControllerUnpublishVolume not implemented")
 }
 
-// Provisioning Volumes
+// CreateVolume Provisioning Volumes
 func (cs *ControllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
 	klog.Infof("ControllerCreateVolume: called with args %+v", *req)
 	volumeName := req.GetName()
@@ -95,18 +95,18 @@ func (cs *ControllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 	// we don't use the size as it makes no sense for rclone. but csi drivers should succeed if
 	// called twice with the same capacity for the same volume and fail if called twice with
 	// differing capacity, so we need to remember it
-	volSizeBytes := int64(req.GetCapacityRange().GetRequiredBytes())
+	volSizeBytes := req.GetCapacityRange().GetRequiredBytes()
 	cs.mutex.Lock()
 	defer cs.mutex.Unlock()
-	if val, ok := cs.active_volumes[volumeName]; ok && val != volSizeBytes {
+	if val, ok := cs.activeVolumes[volumeName]; ok && val != volSizeBytes {
 		return nil, status.Errorf(codes.AlreadyExists, "Volume operation already exists for volume %s", volumeName)
 	}
-	cs.active_volumes[volumeName] = volSizeBytes
+	cs.activeVolumes[volumeName] = volSizeBytes
 
 	// See https://github.com/kubernetes-csi/external-provisioner/blob/v5.1.0/pkg/controller/controller.go#L75
 	// on how parameters from the persistent volume are parsed
 	// We have to pass the secret name and namespace into the context so that the node server can use them
-	// The external provisioner uses the secret name and namespace but it does not pass them into the request,
+	// The external provisioner uses the secret name and namespace, but it does not pass them into the request,
 	// so we read the PVC here to extract them ourselves because we may need them in the node server for decoding secrets.
 	pvcName, pvcNameFound := req.Parameters["csi.storage.k8s.io/pvc/name"]
 	pvcNamespace, pvcNamespaceFound := req.Parameters["csi.storage.k8s.io/pvc/namespace"]
@@ -139,29 +139,28 @@ func (cs *ControllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 
 }
 
-// Delete Volume
-func (cs *ControllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
+func (cs *ControllerServer) DeleteVolume(_ context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
 	volId := req.GetVolumeId()
 	if len(volId) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "DeteleVolume must be provided volume id")
+		return nil, status.Error(codes.InvalidArgument, "DeleteVolume must be provided volume id")
 	}
 	cs.mutex.Lock()
 	defer cs.mutex.Unlock()
-	delete(cs.active_volumes, volId)
+	delete(cs.activeVolumes, volId)
 
 	return &csi.DeleteVolumeResponse{}, nil
 }
 
-func (*ControllerServer) ControllerExpandVolume(ctx context.Context, req *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
+func (*ControllerServer) ControllerExpandVolume(_ context.Context, _ *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ControllerExpandVolume not implemented")
 }
 
-func (cs *ControllerServer) ControllerGetVolume(ctx context.Context, req *csi.ControllerGetVolumeRequest) (*csi.ControllerGetVolumeResponse, error) {
+func (cs *ControllerServer) ControllerGetVolume(_ context.Context, req *csi.ControllerGetVolumeRequest) (*csi.ControllerGetVolumeResponse, error) {
 	return &csi.ControllerGetVolumeResponse{Volume: &csi.Volume{
 		VolumeId: req.VolumeId,
 	}}, nil
 }
 
-func (cs *ControllerServer) ControllerModifyVolume(ctx context.Context, req *csi.ControllerModifyVolumeRequest) (*csi.ControllerModifyVolumeResponse, error) {
+func (cs *ControllerServer) ControllerModifyVolume(_ context.Context, _ *csi.ControllerModifyVolumeRequest) (*csi.ControllerModifyVolumeResponse, error) {
 	return &csi.ControllerModifyVolumeResponse{}, nil
 }
