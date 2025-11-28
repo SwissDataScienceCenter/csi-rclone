@@ -12,6 +12,7 @@ import (
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/metrics"
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/rclone"
 	"github.com/spf13/cobra"
+	"k8s.io/klog"
 )
 
 var (
@@ -22,8 +23,15 @@ var (
 	meters    []metrics.Observable
 )
 
+func exitOnError(err error) {
+	if err != nil {
+		klog.Error(err.Error())
+		os.Exit(1)
+	}
+}
+
 func init() {
-	flag.Set("logtostderr", "true")
+	exitOnError(flag.Set("logtostderr", "true"))
 }
 
 func main() {
@@ -60,7 +68,7 @@ func main() {
 	}
 	root.AddCommand(versionCmd)
 
-	root.ParseFlags(os.Args[1:])
+	exitOnError(root.ParseFlags(os.Args[1:]))
 
 	if metricsServerConfig.Enabled {
 		// Gracefully exit the metrics background servers
@@ -71,10 +79,7 @@ func main() {
 		go metricsServer.ListenAndServe()
 	}
 
-	if err := root.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "%s", err.Error())
-		os.Exit(1)
-	}
+	exitOnError(root.Execute())
 
 	os.Exit(0)
 }
