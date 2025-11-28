@@ -2,6 +2,7 @@ package rclone
 
 import (
 	"context"
+	"errors"
 	"os"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -9,82 +10,44 @@ import (
 	"k8s.io/klog"
 )
 
-type Driver struct {
-	CSIDriver *csicommon.CSIDriver
-	endpoint  string
-
-	ns     *NodeServer
-	cs     *ControllerServer
-	cap    []*csi.VolumeCapability_AccessMode
-	cscap  []*csi.ControllerServiceCapability
-	server csicommon.NonBlockingGRPCServer
-}
-
 var (
 	DriverVersion = "SwissDataScienceCenter"
 )
 
-func NewDriver(nodeID, endpoint string) *Driver {
+type DriverSetup func(csiDriver *csicommon.CSIDriver) (csi.ControllerServer, csi.NodeServer, error)
+
+type DriverServe func(ctx context.Context) error
+
+func Run(ctx context.Context, nodeID, endpoint *string, setup DriverSetup, serve DriverServe) error {
 	driverName := os.Getenv("DRIVER_NAME")
 	if driverName == "" {
-		panic("DriverName env var not set!")
+		return errors.New("DRIVER_NAME env variable not set or empty")
 	}
 	klog.Infof("Starting new %s RcloneDriver in version %s", driverName, DriverVersion)
 
-	d := &Driver{}
-	d.endpoint = endpoint
-
-	d.CSIDriver = csicommon.NewCSIDriver(driverName, DriverVersion, nodeID)
-	d.CSIDriver.AddVolumeCapabilityAccessModes([]csi.VolumeCapability_AccessMode_Mode{
+	driver := csicommon.NewCSIDriver(driverName, DriverVersion, *nodeID)
+	driver.AddVolumeCapabilityAccessModes([]csi.VolumeCapability_AccessMode_Mode{
 		csi.VolumeCapability_AccessMode_SINGLE_NODE_SINGLE_WRITER,
 	})
-	d.CSIDriver.AddControllerServiceCapabilities(
+	driver.AddControllerServiceCapabilities(
 		[]csi.ControllerServiceCapability_RPC_Type{
 			csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
 		})
 
-	return d
-}
-
-func (d *Driver) WithNodeServer(ns *NodeServer) *Driver {
-	d.ns = ns
-	return d
-}
-
-func (d *Driver) WithControllerServer(cs *ControllerServer) *Driver {
-	d.cs = cs
-	return d
-}
-
-func (d *Driver) Run() error {
-	s := csicommon.NewNonBlockingGRPCServer()
-	s.Start(
-		d.endpoint,
-		csicommon.NewDefaultIdentityServer(d.CSIDriver),
-		d.cs,
-		d.ns,
-	)
-	d.server = s
-	if d.ns != nil && d.ns.RcloneOps != nil {
-		onDaemonReady := func() error {
-			if d.ns != nil {
-				return d.ns.remountTrackedVolumes(context.Background())
-			}
-			return nil
-		}
-		return d.ns.RcloneOps.Run(onDaemonReady)
+	is := csicommon.NewDefaultIdentityServer(driver)
+	cs, ns, setupErr := setup(driver)
+	if setupErr != nil {
+		return setupErr
 	}
+
+	s := csicommon.NewNonBlockingGRPCServer()
+	defer s.Stop()
+	s.Start(*endpoint, is, cs, ns)
+
+	if err := serve(ctx); err != nil {
+		return err
+	}
+
 	s.Wait()
 	return nil
-}
-
-func (d *Driver) Stop() error {
-	var err error
-	if d.ns != nil && d.ns.RcloneOps != nil {
-		err = d.ns.RcloneOps.Cleanup()
-	}
-	if d.server != nil {
-		d.server.Stop()
-	}
-	return err
 }

@@ -103,10 +103,6 @@ func NewNodeServer(csiDriver *csicommon.CSIDriver, cacheDir string, cacheSize st
 	if err != nil {
 		return nil, fmt.Errorf("Cannot get a free TCP port to run rclone")
 	}
-	rcloneOps := NewRclone(kubeClient, rclonePort, cacheDir, cacheSize)
-
-	// Use kubelet plugin directory for state persistence
-	stateFile := "/var/lib/kubelet/plugins/csi-rclone/mounted_volumes.json"
 
 	ns := &NodeServer{
 		DefaultNodeServer: csicommon.NewDefaultNodeServer(csiDriver),
@@ -114,10 +110,11 @@ func NewNodeServer(csiDriver *csicommon.CSIDriver, cacheDir string, cacheSize st
 			Interface: mount.New(""),
 			Exec:      exec.New(),
 		},
-		RcloneOps:      rcloneOps,
+		RcloneOps:      NewRclone(kubeClient, rclonePort, cacheDir, cacheSize),
 		mountedVolumes: make(map[string]MountedVolume),
 		mutex:          &sync.Mutex{},
-		stateFile:      stateFile,
+		// Use kubelet plugin directory for state persistence
+		stateFile: "/var/lib/kubelet/plugins/csi-rclone/mounted_volumes.json",
 	}
 
 	// Ensure the folder exists
@@ -136,12 +133,25 @@ func NewNodeServer(csiDriver *csicommon.CSIDriver, cacheDir string, cacheSize st
 	return ns, nil
 }
 
+func (ns *NodeServer) Run(ctx context.Context) error {
+	defer ns.Stop()
+	return ns.RcloneOps.Run(func() error {
+		return ns.remountTrackedVolumes(ctx)
+	})
+}
+
 func (ns *NodeServer) Metrics() []metrics.Observable {
 	var meters []metrics.Observable
 
 	// What should we meter?
 
 	return meters
+}
+
+func (ns *NodeServer) Stop() {
+	if err := ns.RcloneOps.Cleanup(); err != nil {
+		klog.Errorf("Failed to cleanup rclone ops: %v", err)
+	}
 }
 
 type MountedVolume struct {
