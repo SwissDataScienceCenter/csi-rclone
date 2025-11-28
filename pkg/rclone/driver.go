@@ -13,7 +13,7 @@ type Driver struct {
 	CSIDriver *csicommon.CSIDriver
 	endpoint  string
 
-	ns     *nodeServer
+	ns     *NodeServer
 	cs     *ControllerServer
 	cap    []*csi.VolumeCapability_AccessMode
 	cscap  []*csi.ControllerServiceCapability
@@ -46,7 +46,7 @@ func NewDriver(nodeID, endpoint string) *Driver {
 	return d
 }
 
-func (d *Driver) WithNodeServer(ns *nodeServer) *Driver {
+func (d *Driver) WithNodeServer(ns *NodeServer) *Driver {
 	d.ns = ns
 	return d
 }

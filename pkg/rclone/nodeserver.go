@@ -40,7 +40,7 @@ import (
 const CSI_ANNOTATION_PREFIX = "csi-rclone.dev"
 const pvcSecretNameAnnotation = CSI_ANNOTATION_PREFIX + "/secretName"
 
-type nodeServer struct {
+type NodeServer struct {
 	*csicommon.DefaultNodeServer
 	mounter   *mount.SafeFormatAndMount
 	RcloneOps Operations
@@ -87,7 +87,7 @@ func getFreePort() (port int, err error) {
 	return
 }
 
-func NewNodeServer(csiDriver *csicommon.CSIDriver, cacheDir string, cacheSize string) (*nodeServer, error) {
+func NewNodeServer(csiDriver *csicommon.CSIDriver, cacheDir string, cacheSize string) (*NodeServer, error) {
 	err := unmountOldVols()
 	if err != nil {
 		klog.Warningf("There was an error when trying to unmount old volumes: %v", err)
@@ -108,7 +108,7 @@ func NewNodeServer(csiDriver *csicommon.CSIDriver, cacheDir string, cacheSize st
 	// Use kubelet plugin directory for state persistence
 	stateFile := "/var/lib/kubelet/plugins/csi-rclone/mounted_volumes.json"
 
-	ns := &nodeServer{
+	ns := &NodeServer{
 		DefaultNodeServer: csicommon.NewDefaultNodeServer(csiDriver),
 		mounter: &mount.SafeFormatAndMount{
 			Interface: mount.New(""),
@@ -136,7 +136,7 @@ func NewNodeServer(csiDriver *csicommon.CSIDriver, cacheDir string, cacheSize st
 	return ns, nil
 }
 
-func (ns *nodeServer) Metrics() []metrics.Observable {
+func (ns *NodeServer) Metrics() []metrics.Observable {
 	var meters []metrics.Observable
 
 	// What should we meter?
@@ -157,16 +157,16 @@ type MountedVolume struct {
 }
 
 // Mounting Volume (Preparation)
-func (ns *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {
+func (ns *NodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NodeStageVolume not implemented")
 }
 
-func (ns *nodeServer) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolumeRequest) (*csi.NodeUnstageVolumeResponse, error) {
+func (ns *NodeServer) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolumeRequest) (*csi.NodeUnstageVolumeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NodeUnstageVolume not implemented")
 }
 
 // Mounting Volume (Actual Mounting)
-func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
+func (ns *NodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
 	if err := validatePublishVolumeRequest(req); err != nil {
 		return nil, err
 	}
@@ -424,7 +424,7 @@ func extractConfigData(parameters map[string]string) (string, map[string]string)
 }
 
 // Unmounting Volumes
-func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error) {
+func (ns *NodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error) {
 	klog.Infof("NodeUnpublishVolume called with: %s", req)
 	if err := validateUnPublishVolumeRequest(req); err != nil {
 		return nil, err
@@ -465,12 +465,12 @@ func validateUnPublishVolumeRequest(req *csi.NodeUnpublishVolumeRequest) error {
 }
 
 // Resizing Volume
-func (*nodeServer) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolumeRequest) (*csi.NodeExpandVolumeResponse, error) {
+func (*NodeServer) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolumeRequest) (*csi.NodeExpandVolumeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NodeExpandVolume not implemented")
 }
 
 // Track mounted volume for automatic remounting
-func (ns *nodeServer) trackMountedVolume(volumeId, targetPath, remote, remotePath, configData string, readOnly bool, parameters map[string]string, secretName, secretNamespace string) {
+func (ns *NodeServer) trackMountedVolume(volumeId, targetPath, remote, remotePath, configData string, readOnly bool, parameters map[string]string, secretName, secretNamespace string) {
 	ns.mutex.Lock()
 	defer ns.mutex.Unlock()
 
@@ -493,7 +493,7 @@ func (ns *nodeServer) trackMountedVolume(volumeId, targetPath, remote, remotePat
 }
 
 // Remove tracked volume when unmounted
-func (ns *nodeServer) removeTrackedVolume(volumeId string) {
+func (ns *NodeServer) removeTrackedVolume(volumeId string) {
 	ns.mutex.Lock()
 	defer ns.mutex.Unlock()
 
@@ -506,7 +506,7 @@ func (ns *nodeServer) removeTrackedVolume(volumeId string) {
 }
 
 // Automatically remount all tracked volumes after daemon restart
-func (ns *nodeServer) remountTrackedVolumes(ctx context.Context) error {
+func (ns *NodeServer) remountTrackedVolumes(ctx context.Context) error {
 	type mountResult struct {
 		volumeID string
 		err      error
@@ -585,7 +585,7 @@ func (ns *nodeServer) remountTrackedVolumes(ctx context.Context) error {
 	}
 }
 
-func (ns *nodeServer) WaitForMountAvailable(mountpoint string) error {
+func (ns *NodeServer) WaitForMountAvailable(mountpoint string) error {
 	for {
 		select {
 		case <-time.After(100 * time.Millisecond):
