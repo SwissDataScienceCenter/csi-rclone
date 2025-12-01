@@ -194,15 +194,15 @@ func NodeCommandLineParameters(runCmd *cobra.Command, meters *[]metrics.Observab
 }
 
 type MountedVolume struct {
-	VolumeId        string
-	TargetPath      string
-	Remote          string
-	RemotePath      string
-	ConfigData      string
-	ReadOnly        bool
-	Parameters      map[string]string
-	SecretName      string
-	SecretNamespace string
+	VolumeId        string            `json:"volume_id"`
+	TargetPath      string            `json:"target_path"`
+	Remote          string            `json:"remote"`
+	RemotePath      string            `json:"remote_path"`
+	ConfigData      string            `json:"config_data"`
+	ReadOnly        bool              `json:"read_only"`
+	Parameters      map[string]string `json:"parameters"`
+	SecretName      string            `json:"secret_name"`
+	SecretNamespace string            `json:"secret_namespace"`
 }
 
 // Mounting Volume (Preparation)
