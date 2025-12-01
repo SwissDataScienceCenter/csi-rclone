@@ -43,19 +43,19 @@ type nodeServer struct {
 
 	// Track mounted volumes for automatic remounting
 	mountedVolumes map[string]*MountedVolume
-	mutex          sync.RWMutex
+	mutex          *sync.Mutex
 	stateFile      string
 }
 
 type MountedVolume struct {
-	VolumeId       string
-	TargetPath     string
-	Remote         string
-	RemotePath     string
-	ConfigData     string
-	ReadOnly       bool
-	Parameters     map[string]string
-	SecretName     string
+	VolumeId        string
+	TargetPath      string
+	Remote          string
+	RemotePath      string
+	ConfigData      string
+	ReadOnly        bool
+	Parameters      map[string]string
+	SecretName      string
 	SecretNamespace string
 }
 
@@ -375,19 +375,20 @@ func (*nodeServer) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolu
 // Track mounted volume for automatic remounting
 func (ns *nodeServer) trackMountedVolume(volumeId, targetPath, remote, remotePath, configData string, readOnly bool, parameters map[string]string, secretName, secretNamespace string) {
 	ns.mutex.Lock()
-	defer ns.mutex.Unlock()
 
 	ns.mountedVolumes[volumeId] = &MountedVolume{
-		VolumeId:       volumeId,
-		TargetPath:     targetPath,
-		Remote:         remote,
-		RemotePath:     remotePath,
-		ConfigData:     configData,
-		ReadOnly:       readOnly,
-		Parameters:     parameters,
-		SecretName:     secretName,
+		VolumeId:        volumeId,
+		TargetPath:      targetPath,
+		Remote:          remote,
+		RemotePath:      remotePath,
+		ConfigData:      configData,
+		ReadOnly:        readOnly,
+		Parameters:      parameters,
+		SecretName:      secretName,
 		SecretNamespace: secretNamespace,
 	}
+	// Can't use defer here, as persistState also takes the mutex, and would fail as the Unlock happens after it returns
+	ns.mutex.Unlock()
 	klog.Infof("Tracked mounted volume %s at path %s", volumeId, targetPath)
 
 	if err := ns.persistState(); err != nil {
@@ -398,9 +399,10 @@ func (ns *nodeServer) trackMountedVolume(volumeId, targetPath, remote, remotePat
 // Remove tracked volume when unmounted
 func (ns *nodeServer) removeTrackedVolume(volumeId string) {
 	ns.mutex.Lock()
-	defer ns.mutex.Unlock()
 
 	delete(ns.mountedVolumes, volumeId)
+	// Can't use defer here, as persistState also takes the mutex, and would fail as the Unlock happens after it returns
+	ns.mutex.Unlock()
 	klog.Infof("Removed tracked volume %s", volumeId)
 
 	if err := ns.persistState(); err != nil {
@@ -410,8 +412,8 @@ func (ns *nodeServer) removeTrackedVolume(volumeId string) {
 
 // Automatically remount all tracked volumes after daemon restart
 func (ns *nodeServer) remountTrackedVolumes(ctx context.Context) error {
-	ns.mutex.RLock()
-	defer ns.mutex.RUnlock()
+	ns.mutex.Lock()
+	defer ns.mutex.Unlock()
 
 	if len(ns.mountedVolumes) == 0 {
 		klog.Info("No tracked volumes to remount")
@@ -464,20 +466,20 @@ func (ns *nodeServer) WaitForMountAvailable(mountpoint string) error {
 
 // Persist volume state to disk
 func (ns *nodeServer) persistState() error {
-	ns.mutex.RLock()
-	defer ns.mutex.RUnlock()
-
 	if ns.stateFile == "" {
 		return nil
 	}
 
+	if err := os.MkdirAll(filepath.Dir(ns.stateFile), 0755); err != nil {
+		return fmt.Errorf("failed to create state directory: %v", err)
+	}
+
+	ns.mutex.Lock()
+	defer ns.mutex.Unlock()
+
 	data, err := json.Marshal(ns.mountedVolumes)
 	if err != nil {
 		return fmt.Errorf("failed to marshal volume state: %v", err)
-	}
-
-	if err := os.MkdirAll(filepath.Dir(ns.stateFile), 0755); err != nil {
-		return fmt.Errorf("failed to create state directory: %v", err)
 	}
 
 	if err := os.WriteFile(ns.stateFile, data, 0600); err != nil {
@@ -490,12 +492,12 @@ func (ns *nodeServer) persistState() error {
 
 // Load volume state from disk
 func (ns *nodeServer) loadState() error {
-	ns.mutex.Lock()
-	defer ns.mutex.Unlock()
-
 	if ns.stateFile == "" {
 		return nil
 	}
+
+	ns.mutex.Lock()
+	defer ns.mutex.Unlock()
 
 	data, err := os.ReadFile(ns.stateFile)
 	if err != nil {
