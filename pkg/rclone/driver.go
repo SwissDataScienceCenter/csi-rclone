@@ -7,6 +7,7 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	csicommon "github.com/kubernetes-csi/drivers/pkg/csi-common"
+	"github.com/spf13/cobra"
 	"k8s.io/klog"
 )
 
@@ -18,14 +19,31 @@ type DriverSetup func(csiDriver *csicommon.CSIDriver) (csi.ControllerServer, csi
 
 type DriverServe func(ctx context.Context) error
 
-func Run(ctx context.Context, nodeID, endpoint *string, setup DriverSetup, serve DriverServe) error {
+type DriverConfig struct {
+	Endpoint string
+	NodeID   string
+}
+
+func (config *DriverConfig) CommandLineParameters(runCmd *cobra.Command) error {
+	runCmd.PersistentFlags().StringVar(&config.NodeID, "nodeid", config.NodeID, "node id")
+	if err := runCmd.MarkPersistentFlagRequired("nodeid"); err != nil {
+		return err
+	}
+	runCmd.PersistentFlags().StringVar(&config.Endpoint, "endpoint", config.Endpoint, "CSI endpoint")
+	if err := runCmd.MarkPersistentFlagRequired("endpoint"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func Run(ctx context.Context, config *DriverConfig, setup DriverSetup, serve DriverServe) error {
 	driverName := os.Getenv("DRIVER_NAME")
 	if driverName == "" {
 		return errors.New("DRIVER_NAME env variable not set or empty")
 	}
 	klog.Infof("Starting new %s RcloneDriver in version %s", driverName, DriverVersion)
 
-	driver := csicommon.NewCSIDriver(driverName, DriverVersion, *nodeID)
+	driver := csicommon.NewCSIDriver(driverName, DriverVersion, config.NodeID)
 	driver.AddVolumeCapabilityAccessModes([]csi.VolumeCapability_AccessMode_Mode{
 		csi.VolumeCapability_AccessMode_SINGLE_NODE_SINGLE_WRITER,
 	})
@@ -42,7 +60,7 @@ func Run(ctx context.Context, nodeID, endpoint *string, setup DriverSetup, serve
 
 	s := csicommon.NewNonBlockingGRPCServer()
 	defer s.Stop()
-	s.Start(*endpoint, is, cs, ns)
+	s.Start(config.Endpoint, is, cs, ns)
 
 	if err := serve(ctx); err != nil {
 		return err

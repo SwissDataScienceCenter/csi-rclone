@@ -19,6 +19,8 @@ import (
 
 const secretAnnotationName = "csi-rclone.dev/secretName"
 
+type ControllerServerConfig struct{ DriverConfig }
+
 type ControllerServer struct {
 	*csicommon.DefaultControllerServer
 	activeVolumes map[string]int64
@@ -48,14 +50,13 @@ func (cs *ControllerServer) metrics() []metrics.Observable {
 	return meters
 }
 
-func ControllerCommandLineParameters(runCmd *cobra.Command, meters *[]metrics.Observable, nodeID, endpoint *string) error {
+func (config *ControllerServerConfig) CommandLineParameters(runCmd *cobra.Command, meters *[]metrics.Observable) error {
 	runController := &cobra.Command{
 		Use:   "controller",
 		Short: "Start the CSI driver controller.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return Run(context.Background(),
-				nodeID,
-				endpoint,
+				&config.DriverConfig,
 				func(csiDriver *csicommon.CSIDriver) (csi.ControllerServer, csi.NodeServer, error) {
 					cs := NewControllerServer(csiDriver)
 					*meters = append(*meters, cs.metrics()...)
@@ -65,12 +66,7 @@ func ControllerCommandLineParameters(runCmd *cobra.Command, meters *[]metrics.Ob
 			)
 		},
 	}
-	runController.PersistentFlags().StringVar(nodeID, "nodeid", "", "node id")
-	if err := runController.MarkPersistentFlagRequired("nodeid"); err != nil {
-		return err
-	}
-	runController.PersistentFlags().StringVar(endpoint, "endpoint", "", "CSI endpoint")
-	if err := runController.MarkPersistentFlagRequired("endpoint"); err != nil {
+	if err := config.DriverConfig.CommandLineParameters(runController); err != nil {
 		return err
 	}
 

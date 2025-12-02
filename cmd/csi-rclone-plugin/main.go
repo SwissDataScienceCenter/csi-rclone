@@ -15,14 +15,6 @@ import (
 	"k8s.io/klog"
 )
 
-var (
-	endpoint  string
-	nodeID    string
-	cacheDir  string
-	cacheSize string
-	meters    []metrics.Observable
-)
-
 func exitOnError(err error) {
 	if err != nil {
 		klog.Error(err.Error())
@@ -35,6 +27,7 @@ func init() {
 }
 
 func main() {
+	var meters []metrics.Observable
 	metricsServerConfig := metrics.ServerConfig{
 		Host:            "localhost",
 		Port:            9090,
@@ -43,6 +36,8 @@ func main() {
 		ShutdownTimeout: 5 * time.Second,
 		Enabled:         false,
 	}
+	nodeServerConfig := rclone.NodeServerConfig{}
+	controllerServerConfig := rclone.ControllerServerConfig{}
 
 	root := &cobra.Command{
 		Use:   "rclone",
@@ -54,8 +49,8 @@ func main() {
 		Use:   "run",
 		Short: "Start the CSI driver.",
 	}
-	exitOnError(rclone.NodeCommandLineParameters(runCmd, &meters, &nodeID, &endpoint, &cacheDir, &cacheSize))
-	exitOnError(rclone.ControllerCommandLineParameters(runCmd, &meters, &nodeID, &endpoint))
+	exitOnError(nodeServerConfig.CommandLineParameters(runCmd, &meters))
+	exitOnError(controllerServerConfig.CommandLineParameters(runCmd, &meters))
 
 	root.AddCommand(runCmd)
 

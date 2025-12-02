@@ -22,6 +22,7 @@ import (
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/metrics"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/fernet/fernet-go"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/cobra"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
@@ -144,7 +145,14 @@ func (ns *NodeServer) Run(ctx context.Context) error {
 func (ns *NodeServer) metrics() []metrics.Observable {
 	var meters []metrics.Observable
 
-	// What should we meter?
+	meter := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "csi_rclone_active_volume_count",
+		Help: "Number of active (Mounted) volumes.",
+	})
+	meters = append(meters,
+		func() { meter.Set(float64(len(ns.mountedVolumes))) },
+	)
+	prometheus.MustRegister(meter)
 
 	return meters
 }
@@ -155,40 +163,45 @@ func (ns *NodeServer) Stop() {
 	}
 }
 
-func NodeCommandLineParameters(runCmd *cobra.Command, meters *[]metrics.Observable, nodeID, endpoint, cacheDir, cacheSize *string) error {
+type NodeServerConfig struct {
+	DriverConfig
+	CacheDir  string
+	CacheSize string
+	ns        *NodeServer
+}
+
+func (config *NodeServerConfig) CommandLineParameters(runCmd *cobra.Command, meters *[]metrics.Observable) error {
 	runNode := &cobra.Command{
 		Use:   "node",
 		Short: "Start the CSI driver node service - expected to run in a daemonset on every node.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			//Pointers are passed by value, so we use a pointer to a pointer to be able to retrieve the allocated server in the
-			//run closure
-			var nsDoublePointer **NodeServer
-			return Run(context.Background(), nodeID, endpoint,
+			return Run(context.Background(), &config.DriverConfig,
 				func(csiDriver *csicommon.CSIDriver) (csi.ControllerServer, csi.NodeServer, error) {
-					ns, err := NewNodeServer(csiDriver, *cacheDir, *cacheSize)
+					ns, err := NewNodeServer(csiDriver, config.CacheDir, config.CacheSize)
 					if err != nil {
 						return nil, nil, err
 					}
-					*meters = append(*meters, ns.metrics()...)
-					*nsDoublePointer = ns
-					return nil, ns, nil
+					// We go through a temporary variable to ensure that config.ns is only set with a correct NodeServer.
+					config.ns = ns
+					*meters = append(*meters, config.ns.metrics()...)
+					return nil, config.ns, err
 				},
 				func(ctx context.Context) error {
-					return (*nsDoublePointer).Run(ctx)
+					if config.ns == nil {
+						return errors.New("node server uninitialized")
+					}
+					return config.ns.Run(ctx)
 				},
 			)
 		},
 	}
-	runNode.PersistentFlags().StringVar(nodeID, "nodeid", "", "node id")
-	if err := runNode.MarkPersistentFlagRequired("nodeid"); err != nil {
+	if err := config.DriverConfig.CommandLineParameters(runNode); err != nil {
 		return err
 	}
-	runNode.PersistentFlags().StringVar(endpoint, "endpoint", "", "CSI endpoint")
-	if err := runNode.MarkPersistentFlagRequired("endpoint"); err != nil {
-		return err
-	}
-	runNode.PersistentFlags().StringVar(cacheDir, "cachedir", "", "cache dir")
-	runNode.PersistentFlags().StringVar(cacheSize, "cachesize", "", "cache size")
+
+	runNode.PersistentFlags().StringVar(&config.CacheDir, "cachedir", config.CacheDir, "cache dir")
+	runNode.PersistentFlags().StringVar(&config.CacheSize, "cachesize", config.CacheSize, "cache size")
+
 	runCmd.AddCommand(runNode)
 	return nil
 }
