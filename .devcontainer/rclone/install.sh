@@ -19,3 +19,6 @@ rm -rf /tmp/rclone
 # Fix the $GOPATH folder
 chown -R "${USERNAME}:golang" /go
 chmod -R g+r+w /go
+
+# Make sure the default folders exists
+mkdir -p /var/lib/kubelet/plugins/csi-rclone/

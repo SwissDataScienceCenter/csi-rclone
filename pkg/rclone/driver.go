@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/kube"
@@ -89,13 +90,21 @@ func NewNodeServer(csiDriver *csicommon.CSIDriver, cacheDir string, cacheSize st
 			Exec:      utilexec.New(),
 		},
 		RcloneOps:      rcloneOps,
-		mountedVolumes: make(map[string]*MountedVolume),
+		mountedVolumes: make(map[string]MountedVolume),
 		mutex:          &sync.Mutex{},
 		stateFile:      stateFile,
 	}
 
+	// Ensure the folder exists
+	if err = os.MkdirAll(filepath.Dir(ns.stateFile), 0755); err != nil {
+		return nil, fmt.Errorf("failed to create state directory: %v", err)
+	}
+
 	// Load persisted state on startup
-	if err := ns.loadState(); err != nil {
+	ns.mutex.Lock()
+	defer ns.mutex.Unlock()
+
+	if ns.mountedVolumes, err = readVolumeMap(ns.stateFile); err != nil {
 		klog.Warningf("Failed to load persisted volume state: %v", err)
 	}
 

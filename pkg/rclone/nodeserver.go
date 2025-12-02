@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -42,7 +41,7 @@ type nodeServer struct {
 	RcloneOps Operations
 
 	// Track mounted volumes for automatic remounting
-	mountedVolumes map[string]*MountedVolume
+	mountedVolumes map[string]MountedVolume
 	mutex          *sync.Mutex
 	stateFile      string
 }
@@ -375,8 +374,9 @@ func (*nodeServer) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolu
 // Track mounted volume for automatic remounting
 func (ns *nodeServer) trackMountedVolume(volumeId, targetPath, remote, remotePath, configData string, readOnly bool, parameters map[string]string, secretName, secretNamespace string) {
 	ns.mutex.Lock()
+	defer ns.mutex.Unlock()
 
-	ns.mountedVolumes[volumeId] = &MountedVolume{
+	ns.mountedVolumes[volumeId] = MountedVolume{
 		VolumeId:        volumeId,
 		TargetPath:      targetPath,
 		Remote:          remote,
@@ -387,11 +387,9 @@ func (ns *nodeServer) trackMountedVolume(volumeId, targetPath, remote, remotePat
 		SecretName:      secretName,
 		SecretNamespace: secretNamespace,
 	}
-	// Can't use defer here, as persistState also takes the mutex, and would fail as the Unlock happens after it returns
-	ns.mutex.Unlock()
 	klog.Infof("Tracked mounted volume %s at path %s", volumeId, targetPath)
 
-	if err := ns.persistState(); err != nil {
+	if err := writeVolumeMap(ns.stateFile, ns.mountedVolumes); err != nil {
 		klog.Errorf("Failed to persist volume state: %v", err)
 	}
 }
@@ -399,13 +397,12 @@ func (ns *nodeServer) trackMountedVolume(volumeId, targetPath, remote, remotePat
 // Remove tracked volume when unmounted
 func (ns *nodeServer) removeTrackedVolume(volumeId string) {
 	ns.mutex.Lock()
+	defer ns.mutex.Unlock()
 
 	delete(ns.mountedVolumes, volumeId)
-	// Can't use defer here, as persistState also takes the mutex, and would fail as the Unlock happens after it returns
-	ns.mutex.Unlock()
 	klog.Infof("Removed tracked volume %s", volumeId)
 
-	if err := ns.persistState(); err != nil {
+	if err := writeVolumeMap(ns.stateFile, ns.mountedVolumes); err != nil {
 		klog.Errorf("Failed to persist volume state: %v", err)
 	}
 }
@@ -465,55 +462,45 @@ func (ns *nodeServer) WaitForMountAvailable(mountpoint string) error {
 }
 
 // Persist volume state to disk
-func (ns *nodeServer) persistState() error {
-	if ns.stateFile == "" {
+func writeVolumeMap(filename string, volumes map[string]MountedVolume) error {
+	if filename == "" {
 		return nil
 	}
 
-	if err := os.MkdirAll(filepath.Dir(ns.stateFile), 0755); err != nil {
-		return fmt.Errorf("failed to create state directory: %v", err)
-	}
-
-	ns.mutex.Lock()
-	defer ns.mutex.Unlock()
-
-	data, err := json.Marshal(ns.mountedVolumes)
+	data, err := json.Marshal(volumes)
 	if err != nil {
 		return fmt.Errorf("failed to marshal volume state: %v", err)
 	}
 
-	if err := os.WriteFile(ns.stateFile, data, 0600); err != nil {
+	if err := os.WriteFile(filename, data, 0600); err != nil {
 		return fmt.Errorf("failed to write state file: %v", err)
 	}
 
-	klog.Infof("Persisted volume state to %s", ns.stateFile)
+	klog.Infof("Persisted volume state to %s", filename)
 	return nil
 }
 
 // Load volume state from disk
-func (ns *nodeServer) loadState() error {
-	if ns.stateFile == "" {
-		return nil
+func readVolumeMap(filename string) (map[string]MountedVolume, error) {
+	volumes := make(map[string]MountedVolume)
+
+	if filename == "" {
+		return volumes, nil
 	}
 
-	ns.mutex.Lock()
-	defer ns.mutex.Unlock()
-
-	data, err := os.ReadFile(ns.stateFile)
+	data, err := os.ReadFile(filename)
 	if err != nil {
 		if os.IsNotExist(err) {
 			klog.Info("No persisted volume state found, starting fresh")
-			return nil
+			return volumes, nil
 		}
-		return fmt.Errorf("failed to read state file: %v", err)
+		return volumes, fmt.Errorf("failed to read state file: %v", err)
 	}
 
-	var volumes map[string]*MountedVolume
 	if err := json.Unmarshal(data, &volumes); err != nil {
-		return fmt.Errorf("failed to unmarshal volume state: %v", err)
+		return nil, fmt.Errorf("failed to unmarshal volume state: %v", err)
 	}
 
-	ns.mountedVolumes = volumes
-	klog.Infof("Loaded %d tracked volumes from %s", len(ns.mountedVolumes), ns.stateFile)
-	return nil
+	klog.Infof("Loaded %d tracked volumes from %s", len(volumes), filename)
+	return volumes, nil
 }
