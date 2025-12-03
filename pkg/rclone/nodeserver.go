@@ -430,8 +430,11 @@ func (ns *nodeServer) remountTrackedVolumes(ctx context.Context) error {
 
 	// Limit the number of active workers to the number of CPU threads (arbitrarily chosen)
 	limits := make(chan bool, runtime.GOMAXPROCS(0))
+	defer close(limits)
 
 	results := make(chan mountResult, len(ns.mountedVolumes))
+	defer close(results)
+
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
