@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -409,8 +410,16 @@ func (ns *nodeServer) removeTrackedVolume(volumeId string) {
 
 // Automatically remount all tracked volumes after daemon restart
 func (ns *nodeServer) remountTrackedVolumes(ctx context.Context) error {
+	type mountResult struct {
+		volumeID string
+		err      error
+	}
+
 	ns.mutex.Lock()
 	defer ns.mutex.Unlock()
+
+	wg := new(sync.WaitGroup)
+	defer wg.Wait()
 
 	if len(ns.mountedVolumes) == 0 {
 		klog.Info("No tracked volumes to remount")
@@ -419,32 +428,62 @@ func (ns *nodeServer) remountTrackedVolumes(ctx context.Context) error {
 
 	klog.Infof("Remounting %d tracked volumes", len(ns.mountedVolumes))
 
+	// Limit the number of active workers to the number of CPU threads (arbitrarily chosen)
+	limits := make(chan bool, runtime.GOMAXPROCS(0))
+
+	results := make(chan mountResult, len(ns.mountedVolumes))
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
 	for volumeId, mv := range ns.mountedVolumes {
-		klog.Infof("Remounting volume %s to %s", volumeId, mv.TargetPath)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 
-		// Create the mount directory if it doesn't exist
-		if err := os.MkdirAll(mv.TargetPath, 0750); err != nil {
-			klog.Errorf("Failed to create mount directory %s: %v", mv.TargetPath, err)
-			continue
-		}
+			limits <- true // block until there is a free slot in the queue
+			defer func() {
+				<-limits // free a slot in the queue when we exit
+			}()
 
-		// Remount the volume
-		rcloneVol := &RcloneVolume{
-			ID:         mv.VolumeId,
-			Remote:     mv.Remote,
-			RemotePath: mv.RemotePath,
-		}
+			ctxWithMountTimeout, cancel := context.WithTimeout(ctxWithTimeout, 30*time.Second)
+			defer cancel()
 
-		err := ns.RcloneOps.Mount(ctx, rcloneVol, mv.TargetPath, mv.ConfigData, mv.ReadOnly, mv.Parameters)
-		if err != nil {
-			klog.Errorf("Failed to remount volume %s: %v", volumeId, err)
-			// Don't return error here - continue with other volumes
-		} else {
-			klog.Infof("Successfully remounted volume %s", volumeId)
-		}
+			klog.Infof("Remounting volume %s to %s", volumeId, mv.TargetPath)
+
+			// Create the mount directory if it doesn't exist
+			var err error
+			if err = os.MkdirAll(mv.TargetPath, 0750); err != nil {
+				klog.Errorf("Failed to create mount directory %s: %v", mv.TargetPath, err)
+			} else {
+				// Remount the volume
+				rcloneVol := &RcloneVolume{
+					ID:         mv.VolumeId,
+					Remote:     mv.Remote,
+					RemotePath: mv.RemotePath,
+				}
+
+				err = ns.RcloneOps.Mount(ctxWithMountTimeout, rcloneVol, mv.TargetPath, mv.ConfigData, mv.ReadOnly, mv.Parameters)
+			}
+
+			results <- mountResult{volumeId, err}
+		}()
 	}
 
-	return nil
+	for {
+		select {
+		case result := <-results:
+			if result.err != nil {
+				klog.Errorf("Failed to remount volume %s: %v", result.volumeID, result.err)
+				// Don't return error here, continue with other volumes not to block all users because of a failed mount.
+				delete(ns.mountedVolumes, result.volumeID)
+				// Should we keep it on disk? This will be lost on the first new mount which will override the file.
+			} else {
+				klog.Infof("Successfully remounted volume %s", result.volumeID)
+			}
+		case <-ctxWithTimeout.Done():
+			return ctxWithTimeout.Err()
+		}
+	}
 }
 
 func (ns *nodeServer) WaitForMountAvailable(mountpoint string) error {
