@@ -418,9 +418,6 @@ func (ns *nodeServer) remountTrackedVolumes(ctx context.Context) error {
 	ns.mutex.Lock()
 	defer ns.mutex.Unlock()
 
-	wg := new(sync.WaitGroup)
-	defer wg.Wait()
-
 	if len(ns.mountedVolumes) == 0 {
 		klog.Info("No tracked volumes to remount")
 		return nil
@@ -432,17 +429,15 @@ func (ns *nodeServer) remountTrackedVolumes(ctx context.Context) error {
 	limits := make(chan bool, runtime.GOMAXPROCS(0))
 	defer close(limits)
 
-	results := make(chan mountResult, len(ns.mountedVolumes))
+	volumesCount := len(ns.mountedVolumes)
+	results := make(chan mountResult, volumesCount)
 	defer close(results)
 
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
 	for volumeId, mv := range ns.mountedVolumes {
-		wg.Add(1)
 		go func() {
-			defer wg.Done()
-
 			limits <- true // block until there is a free slot in the queue
 			defer func() {
 				<-limits // free a slot in the queue when we exit
@@ -475,6 +470,7 @@ func (ns *nodeServer) remountTrackedVolumes(ctx context.Context) error {
 	for {
 		select {
 		case result := <-results:
+			volumesCount--
 			if result.err != nil {
 				klog.Errorf("Failed to remount volume %s: %v", result.volumeID, result.err)
 				// Don't return error here, continue with other volumes not to block all users because of a failed mount.
@@ -482,6 +478,9 @@ func (ns *nodeServer) remountTrackedVolumes(ctx context.Context) error {
 				// Should we keep it on disk? This will be lost on the first new mount which will override the file.
 			} else {
 				klog.Infof("Successfully remounted volume %s", result.volumeID)
+			}
+			if volumesCount == 0 {
+				return nil
 			}
 		case <-ctxWithTimeout.Done():
 			return ctxWithTimeout.Err()
