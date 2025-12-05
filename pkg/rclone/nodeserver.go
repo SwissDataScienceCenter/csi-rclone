@@ -577,18 +577,19 @@ func (ns *NodeServer) remountTrackedVolumes(ctx context.Context) error {
 	ns.mutex.Lock()
 	defer ns.mutex.Unlock()
 
-	if len(ns.mountedVolumes) == 0 {
+	volumesCount := len(ns.mountedVolumes)
+
+	if volumesCount == 0 {
 		klog.Info("No tracked volumes to remount")
 		return nil
 	}
 
-	klog.Infof("Remounting %d tracked volumes", len(ns.mountedVolumes))
+	klog.Infof("Remounting %d tracked volumes", volumesCount)
 
 	// Limit the number of active workers to the number of CPU threads (arbitrarily chosen)
 	limits := make(chan bool, runtime.GOMAXPROCS(0))
 	defer close(limits)
 
-	volumesCount := len(ns.mountedVolumes)
 	results := make(chan mountResult, volumesCount)
 	defer close(results)
 
