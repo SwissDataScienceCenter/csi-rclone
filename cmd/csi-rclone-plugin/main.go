@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/SwissDataScienceCenter/csi-rclone/pkg/common"
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/metrics"
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/rclone"
 	"github.com/spf13/cobra"
@@ -117,7 +118,7 @@ func handleNode() {
 	}
 	meters = append(meters, ns.Metrics()...)
 	d.WithNodeServer(ns)
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), common.InterruptSignals...)
 	defer stop()
 	err = d.Run(ctx)
 	if err != nil {
@@ -130,7 +131,7 @@ func handleController() {
 	cs := rclone.NewControllerServer(d.CSIDriver)
 	meters = append(meters, cs.Metrics()...)
 	d.WithControllerServer(cs)
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), common.InterruptSignals...)
 	defer stop()
 	err := d.Run(ctx)
 	if err != nil {
