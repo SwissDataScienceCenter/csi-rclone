@@ -24,14 +24,14 @@ type ControllerServerConfig struct{ DriverConfig }
 type ControllerServer struct {
 	*csicommon.DefaultControllerServer
 	activeVolumes map[string]int64
-	mutex         sync.RWMutex
+	mutex         *sync.RWMutex
 }
 
 func NewControllerServer(csiDriver *csicommon.CSIDriver) *ControllerServer {
 	return &ControllerServer{
 		DefaultControllerServer: csicommon.NewDefaultControllerServer(csiDriver),
 		activeVolumes:           map[string]int64{},
-		mutex:                   sync.RWMutex{},
+		mutex:                   &sync.RWMutex{},
 	}
 }
 
@@ -43,7 +43,11 @@ func (cs *ControllerServer) metrics() []metrics.Observable {
 		Help: "Number of active (Mounted) volumes.",
 	})
 	meters = append(meters,
-		func() { meter.Set(float64(len(cs.activeVolumes))) },
+		func() {
+			cs.mutex.RLock()
+			defer cs.mutex.RUnlock()
+			meter.Set(float64(len(cs.activeVolumes)))
+		},
 	)
 	prometheus.MustRegister(meter)
 
@@ -83,8 +87,8 @@ func (cs *ControllerServer) ValidateVolumeCapabilities(_ context.Context, req *c
 		return nil, status.Error(codes.InvalidArgument, "ValidateVolumeCapabilities without capabilities")
 	}
 
-	cs.mutex.Lock()
-	defer cs.mutex.Unlock()
+	cs.mutex.RLock()
+	defer cs.mutex.RUnlock()
 	if _, ok := cs.activeVolumes[volId]; !ok {
 		return nil, status.Errorf(codes.NotFound, "Volume %s not found", volId)
 	}
