@@ -49,7 +49,7 @@ var _ = Describe("Sanity CSI checks", Ordered, func() {
 	var driver *rclone.Driver = &rclone.Driver{}
 	var socketDir string
 
-	BeforeAll(func() {
+	BeforeAll(func(ctx SpecContext) {
 		socketDir, err = createSocketDir()
 		Expect(err).ShouldNot(HaveOccurred())
 		endpoint = fmt.Sprintf("unix://%s/csi.sock", socketDir)
@@ -63,7 +63,7 @@ var _ = Describe("Sanity CSI checks", Ordered, func() {
 		driver.WithControllerServer(cs).WithNodeServer(ns)
 		go func() {
 			defer GinkgoRecover()
-			err := driver.Run()
+			err := driver.Run(ctx)
 			Expect(err).ShouldNot(HaveOccurred())
 		}()
 		_, err = utils.Connect(endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
