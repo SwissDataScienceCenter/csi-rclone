@@ -152,7 +152,7 @@ func (d *Driver) WithControllerServer(cs *controllerServer) *Driver {
 	return d
 }
 
-func (d *Driver) Run() error {
+func (d *Driver) Run(ctx context.Context) error {
 	s := csicommon.NewNonBlockingGRPCServer()
 	s.Start(
 		d.endpoint,
@@ -164,11 +164,11 @@ func (d *Driver) Run() error {
 	if d.ns != nil && d.ns.RcloneOps != nil {
 		onDaemonReady := func() error {
 			if d.ns != nil {
-				return d.ns.remountTrackedVolumes(context.Background())
+				return d.ns.remountTrackedVolumes(ctx)
 			}
 			return nil
 		}
-		return d.ns.RcloneOps.Run(onDaemonReady)
+		return d.ns.RcloneOps.Run(ctx, onDaemonReady)
 	}
 	s.Wait()
 	return nil

@@ -117,7 +117,9 @@ func handleNode() {
 	}
 	meters = append(meters, ns.Metrics()...)
 	d.WithNodeServer(ns)
-	err = d.Run()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	err = d.Run(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -128,7 +130,9 @@ func handleController() {
 	cs := rclone.NewControllerServer(d.CSIDriver)
 	meters = append(meters, cs.Metrics()...)
 	d.WithControllerServer(cs)
-	err := d.Run()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	err := d.Run(ctx)
 	if err != nil {
 		panic(err)
 	}
