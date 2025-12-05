@@ -34,7 +34,7 @@ type Operations interface {
 	Unmount(ctx context.Context, volumeId string, targetPath string) error
 	GetVolumeById(ctx context.Context, volumeId string) (*RcloneVolume, error)
 	Cleanup() error
-	Run(onDaemonReady func() error) error
+	Run(ctx context.Context, onDaemonReady func() error) error
 }
 
 type Rclone struct {
@@ -160,7 +160,11 @@ func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPa
 		return fmt.Errorf("mounting failed: couldn't create request body: %s", err)
 	}
 	requestBody := bytes.NewBuffer(postBody)
-	resp, err := http.Post(fmt.Sprintf("http://localhost:%d/config/create", r.port), "application/json", requestBody)
+	req, err := createRcloneRequest(ctx, http.MethodPost, requestBody, "/config/create", r.port)
+	if err != nil {
+		return fmt.Errorf("mounting failed: cannot create a request for rclone config creation: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("mounting failed: couldn't send HTTP request to create config: %w", err)
 	}
@@ -218,7 +222,11 @@ func (r *Rclone) Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPa
 	}
 	klog.Infof("executing mount command args=%s", string(postBody))
 	requestBody = bytes.NewBuffer(postBody)
-	resp, err = http.Post(fmt.Sprintf("http://localhost:%d/mount/mount", r.port), "application/json", requestBody)
+	req, err = createRcloneRequest(ctx, http.MethodPost, requestBody, "/mount/mount", r.port)
+	if err != nil {
+		return fmt.Errorf("mounting failed: cannot create a request for rclone mounting: %w", err)
+	}
+	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("mounting failed: couldn't send HTTP request to create mount: %w", err)
 	}
@@ -249,7 +257,7 @@ func (r *Rclone) CreateVol(ctx context.Context, volumeName, remote, remotePath, 
 	}
 	flags["config"] = rcloneConfigPath
 
-	return r.command("mkdir", remote, path, flags)
+	return r.command(ctx, "mkdir", remote, path, flags)
 }
 
 func (r Rclone) DeleteVol(ctx context.Context, rcloneVolume *RcloneVolume, rcloneConfigPath string, parameters map[string]string) error {
@@ -258,7 +266,7 @@ func (r Rclone) DeleteVol(ctx context.Context, rcloneVolume *RcloneVolume, rclon
 		flags[key] = value
 	}
 	flags["config"] = rcloneConfigPath
-	return r.command("purge", rcloneVolume.Remote, rcloneVolume.RemotePath, flags)
+	return r.command(ctx, "purge", rcloneVolume.Remote, rcloneVolume.RemotePath, flags)
 }
 
 func (r Rclone) Unmount(ctx context.Context, volumeId string, targetPath string) error {
@@ -273,7 +281,11 @@ func (r Rclone) Unmount(ctx context.Context, volumeId string, targetPath string)
 		return fmt.Errorf("unmounting failed: couldn't create request body: %s", err)
 	}
 	requestBody := bytes.NewBuffer(postBody)
-	resp, err := http.Post(fmt.Sprintf("http://localhost:%d/mount/unmount", r.port), "application/json", requestBody)
+	req, err := createRcloneRequest(ctx, http.MethodPost, requestBody, "/mount/unmount", r.port)
+	if err != nil {
+		return fmt.Errorf("unmounting failed: couldn't create a request for rclone: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("unmounting failed: couldn't send HTTP request: %w", err)
 	}
@@ -291,7 +303,11 @@ func (r Rclone) Unmount(ctx context.Context, volumeId string, targetPath string)
 		return fmt.Errorf("deleting config failed: couldn't create request body: %s", err)
 	}
 	requestBody = bytes.NewBuffer(postBody)
-	resp, err = http.Post(fmt.Sprintf("http://localhost:%d/config/delete", r.port), "application/json", requestBody)
+	req, err = createRcloneRequest(ctx, http.MethodPost, requestBody, "/config/delete", r.port)
+	if err != nil {
+		return fmt.Errorf("unmounting failed: couldn't create a request for rclone configuration deletion: %w", err)
+	}
+	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
 		klog.Errorf("deleting config failed: couldn't send HTTP request: %v", err)
 		return nil
@@ -409,7 +425,7 @@ func checkResponse(resp *http.Response) error {
 	return fmt.Errorf("received error from the rclone server: %s", result.String())
 }
 
-func (r *Rclone) start_daemon() error {
+func (r *Rclone) start_daemon(ctx context.Context) error {
 	f, err := os.CreateTemp("", "rclone.conf")
 	if err != nil {
 		return err
@@ -449,7 +465,7 @@ func (r *Rclone) start_daemon() error {
 	klog.Infof("running rclone remote control daemon cmd=%s, args=%s", rclone_cmd, rclone_args)
 
 	env := os.Environ()
-	cmd := os_exec.Command(rclone_cmd, rclone_args...)
+	cmd := os_exec.CommandContext(ctx, rclone_cmd, rclone_args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	stdout, err := cmd.StdoutPipe()
 	cmd.Stderr = cmd.Stdout
@@ -472,8 +488,8 @@ func (r *Rclone) start_daemon() error {
 	return nil
 }
 
-func (r *Rclone) Run(onDaemonReady func() error) error {
-	err := r.start_daemon()
+func (r *Rclone) Run(ctx context.Context, onDaemonReady func() error) error {
+	err := r.start_daemon(ctx)
 	if err != nil {
 		return err
 	}
@@ -494,7 +510,7 @@ func (r *Rclone) Cleanup() error {
 	return r.daemonCmd.Process.Kill()
 }
 
-func (r *Rclone) command(cmd, remote, remotePath string, flags map[string]string) error {
+func (r *Rclone) command(ctx context.Context, cmd, remote, remotePath string, flags map[string]string) error {
 	// rclone <operand> remote:path [flag]
 	args := append(
 		[]string{},
@@ -508,11 +524,21 @@ func (r *Rclone) command(cmd, remote, remotePath string, flags map[string]string
 	}
 
 	klog.Infof("executing %s command cmd=rclone, remote=%s:%s", cmd, remote, remotePath)
-	out, err := r.execute.Command("rclone", args...).CombinedOutput()
+	out, err := r.execute.CommandContext(ctx, "rclone", args...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s failed: %v cmd: 'rclone' remote: '%s' remotePath:'%s' args:'%s'  output: %q",
 			cmd, err, remote, remotePath, args, string(out))
 	}
 
 	return nil
+}
+
+func createRcloneRequest(ctx context.Context, method string, body io.Reader, path string, rcloneServerPort int) (*http.Request, error) {
+	rcloneServerURL := fmt.Sprintf("http://localhost:%d/%s", rcloneServerPort, strings.TrimLeft(path, "/"))
+	req, err := http.NewRequestWithContext(ctx, method, rcloneServerURL, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	return req, nil
 }
