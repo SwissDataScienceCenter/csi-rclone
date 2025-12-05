@@ -11,9 +11,7 @@ import (
 	"k8s.io/klog"
 )
 
-var (
-	DriverVersion = "SwissDataScienceCenter"
-)
+const DriverVersion = "SwissDataScienceCenter"
 
 type DriverSetup func(csiDriver *csicommon.CSIDriver) (csi.ControllerServer, csi.NodeServer, error)
 
