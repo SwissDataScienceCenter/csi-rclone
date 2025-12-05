@@ -2,185 +2,68 @@ package rclone
 
 import (
 	"context"
-	"fmt"
-	"net"
+	"errors"
 	"os"
-	"path/filepath"
-	"sync"
 
-	"github.com/SwissDataScienceCenter/csi-rclone/pkg/kube"
-	"github.com/SwissDataScienceCenter/csi-rclone/pkg/metrics"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	csicommon "github.com/kubernetes-csi/drivers/pkg/csi-common"
-	"github.com/prometheus/client_golang/prometheus"
+	"github.com/spf13/cobra"
 	"k8s.io/klog"
-	"k8s.io/utils/mount"
-
-	utilexec "k8s.io/utils/exec"
 )
 
-type Driver struct {
-	CSIDriver *csicommon.CSIDriver
-	endpoint  string
+const DriverVersion = "SwissDataScienceCenter"
 
-	ns     *nodeServer
-	cs     *controllerServer
-	cap    []*csi.VolumeCapability_AccessMode
-	cscap  []*csi.ControllerServiceCapability
-	server csicommon.NonBlockingGRPCServer
+type DriverSetup func(csiDriver *csicommon.CSIDriver) (csi.ControllerServer, csi.NodeServer, error)
+
+type DriverServe func(ctx context.Context) error
+
+type DriverConfig struct {
+	Endpoint string
+	NodeID   string
 }
 
-var (
-	DriverVersion = "SwissDataScienceCenter"
-)
-
-func getFreePort() (port int, err error) {
-	var a *net.TCPAddr
-	if a, err = net.ResolveTCPAddr("tcp", "localhost:0"); err == nil {
-		var l *net.TCPListener
-		if l, err = net.ListenTCP("tcp", a); err == nil {
-			defer l.Close()
-			return l.Addr().(*net.TCPAddr).Port, nil
-		}
+func (config *DriverConfig) CommandLineParameters(runCmd *cobra.Command) error {
+	runCmd.PersistentFlags().StringVar(&config.NodeID, "nodeid", config.NodeID, "node id")
+	if err := runCmd.MarkPersistentFlagRequired("nodeid"); err != nil {
+		return err
 	}
-	return
+	runCmd.PersistentFlags().StringVar(&config.Endpoint, "endpoint", config.Endpoint, "CSI endpoint")
+	if err := runCmd.MarkPersistentFlagRequired("endpoint"); err != nil {
+		return err
+	}
+	return nil
 }
 
-func NewDriver(nodeID, endpoint string) *Driver {
+func Run(ctx context.Context, config *DriverConfig, setup DriverSetup, serve DriverServe) error {
 	driverName := os.Getenv("DRIVER_NAME")
 	if driverName == "" {
-		panic("DriverName env var not set!")
+		return errors.New("DRIVER_NAME env variable not set or empty")
 	}
 	klog.Infof("Starting new %s RcloneDriver in version %s", driverName, DriverVersion)
 
-	d := &Driver{}
-	d.endpoint = endpoint
-
-	d.CSIDriver = csicommon.NewCSIDriver(driverName, DriverVersion, nodeID)
-	d.CSIDriver.AddVolumeCapabilityAccessModes([]csi.VolumeCapability_AccessMode_Mode{
+	driver := csicommon.NewCSIDriver(driverName, DriverVersion, config.NodeID)
+	driver.AddVolumeCapabilityAccessModes([]csi.VolumeCapability_AccessMode_Mode{
 		csi.VolumeCapability_AccessMode_SINGLE_NODE_SINGLE_WRITER,
 	})
-	d.CSIDriver.AddControllerServiceCapabilities(
+	driver.AddControllerServiceCapabilities(
 		[]csi.ControllerServiceCapability_RPC_Type{
 			csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
 		})
 
-	return d
-}
-
-func NewNodeServer(csiDriver *csicommon.CSIDriver, cacheDir string, cacheSize string) (*nodeServer, error) {
-	kubeClient, err := kube.GetK8sClient()
-	if err != nil {
-		return nil, err
+	is := csicommon.NewDefaultIdentityServer(driver)
+	cs, ns, setupErr := setup(driver)
+	if setupErr != nil {
+		return setupErr
 	}
 
-	rclonePort, err := getFreePort()
-	if err != nil {
-		return nil, fmt.Errorf("Cannot get a free TCP port to run rclone")
-	}
-	rcloneOps := NewRclone(kubeClient, rclonePort, cacheDir, cacheSize)
-
-	// Use kubelet plugin directory for state persistence
-	stateFile := "/var/lib/kubelet/plugins/csi-rclone/mounted_volumes.json"
-
-	ns := &nodeServer{
-		DefaultNodeServer: csicommon.NewDefaultNodeServer(csiDriver),
-		mounter: &mount.SafeFormatAndMount{
-			Interface: mount.New(""),
-			Exec:      utilexec.New(),
-		},
-		RcloneOps:      rcloneOps,
-		mountedVolumes: make(map[string]MountedVolume),
-		mutex:          &sync.Mutex{},
-		stateFile:      stateFile,
-	}
-
-	// Ensure the folder exists
-	if err = os.MkdirAll(filepath.Dir(ns.stateFile), 0755); err != nil {
-		return nil, fmt.Errorf("failed to create state directory: %v", err)
-	}
-
-	// Load persisted state on startup
-	ns.mutex.Lock()
-	defer ns.mutex.Unlock()
-
-	if ns.mountedVolumes, err = readVolumeMap(ns.stateFile); err != nil {
-		klog.Warningf("Failed to load persisted volume state: %v", err)
-	}
-
-	return ns, nil
-}
-
-func NewControllerServer(csiDriver *csicommon.CSIDriver) *controllerServer {
-	return &controllerServer{
-		DefaultControllerServer: csicommon.NewDefaultControllerServer(csiDriver),
-		active_volumes:          map[string]int64{},
-		mutex:                   sync.RWMutex{},
-	}
-}
-
-func (ns *nodeServer) Metrics() []metrics.Observable {
-	var meters []metrics.Observable
-
-	// What should we meter?
-
-	return meters
-}
-
-func (cs *controllerServer) Metrics() []metrics.Observable {
-	var meters []metrics.Observable
-
-	meter := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "csi_rclone_active_volume_count",
-		Help: "Number of active (Mounted) volumes.",
-	})
-	meters = append(meters,
-		func() { meter.Set(float64(len(cs.active_volumes))) },
-	)
-	prometheus.MustRegister(meter)
-
-	return meters
-}
-
-func (d *Driver) WithNodeServer(ns *nodeServer) *Driver {
-	d.ns = ns
-	return d
-}
-
-func (d *Driver) WithControllerServer(cs *controllerServer) *Driver {
-	d.cs = cs
-	return d
-}
-
-func (d *Driver) Run() error {
 	s := csicommon.NewNonBlockingGRPCServer()
-	s.Start(
-		d.endpoint,
-		csicommon.NewDefaultIdentityServer(d.CSIDriver),
-		d.cs,
-		d.ns,
-	)
-	d.server = s
-	if d.ns != nil && d.ns.RcloneOps != nil {
-		onDaemonReady := func() error {
-			if d.ns != nil {
-				return d.ns.remountTrackedVolumes(context.Background())
-			}
-			return nil
-		}
-		return d.ns.RcloneOps.Run(onDaemonReady)
+	defer s.Stop()
+	s.Start(config.Endpoint, is, cs, ns)
+
+	if err := serve(ctx); err != nil {
+		return err
 	}
+
 	s.Wait()
 	return nil
-}
-
-func (d *Driver) Stop() error {
-	var err error
-	if d.ns != nil && d.ns.RcloneOps != nil {
-		err = d.ns.RcloneOps.Cleanup()
-	}
-	if d.server != nil {
-		d.server.Stop()
-	}
-	return err
 }
