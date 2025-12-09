@@ -9,9 +9,11 @@ import (
 
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/kube"
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/rclone"
+	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/google/uuid"
 	"github.com/kubernetes-csi/csi-test/v5/pkg/sanity"
 	"github.com/kubernetes-csi/csi-test/v5/utils"
+	csicommon "github.com/kubernetes-csi/drivers/pkg/csi-common"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"google.golang.org/grpc"
@@ -45,25 +47,35 @@ func createSocketDir() (string, error) {
 var _ = Describe("Sanity CSI checks", Ordered, func() {
 	var err error
 	var kubeClient *kubernetes.Clientset = &kubernetes.Clientset{}
+	var nodeID string
 	var endpoint string
-	var driver *rclone.Driver = &rclone.Driver{}
 	var socketDir string
 
 	BeforeAll(func() {
 		socketDir, err = createSocketDir()
 		Expect(err).ShouldNot(HaveOccurred())
+		nodeID = "hostname"
 		endpoint = fmt.Sprintf("unix://%s/csi.sock", socketDir)
 		kubeClient, err = kube.GetK8sClient()
 		Expect(err).ShouldNot(HaveOccurred())
 		os.Setenv("DRIVER_NAME", "csi-rclone")
-		driver = rclone.NewDriver("hostname", endpoint)
-		cs := rclone.NewControllerServer(driver.CSIDriver)
-		ns, err := rclone.NewNodeServer(driver.CSIDriver, "", "")
-		Expect(err).ShouldNot(HaveOccurred())
-		driver.WithControllerServer(cs).WithNodeServer(ns)
 		go func() {
 			defer GinkgoRecover()
-			err := driver.Run()
+			var nsDoublePointer **rclone.NodeServer
+			err := rclone.Run(context.Background(), &nodeID, &endpoint,
+				func(csiDriver *csicommon.CSIDriver) (csi.ControllerServer, csi.NodeServer, error) {
+					cs := rclone.NewControllerServer(csiDriver)
+					ns, err := rclone.NewNodeServer(csiDriver, "", "")
+					if err != nil {
+						return nil, nil, err
+					}
+					nsDoublePointer = &ns
+					return cs, ns, nil
+				},
+				func(ctx context.Context) error {
+					return (*nsDoublePointer).Run(ctx)
+				},
+			)
 			Expect(err).ShouldNot(HaveOccurred())
 		}()
 		_, err = utils.Connect(endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -71,7 +83,6 @@ var _ = Describe("Sanity CSI checks", Ordered, func() {
 	})
 
 	AfterAll(func() {
-		driver.Stop()
 		os.RemoveAll(socketDir)
 		os.Unsetenv("DRIVER_NAME")
 	})
