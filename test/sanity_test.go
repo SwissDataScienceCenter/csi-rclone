@@ -9,7 +9,6 @@ import (
 
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/kube"
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/rclone"
-	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/google/uuid"
 	"github.com/kubernetes-csi/csi-test/v5/pkg/sanity"
 	"github.com/kubernetes-csi/csi-test/v5/utils"
@@ -47,33 +46,29 @@ func createSocketDir() (string, error) {
 var _ = Describe("Sanity CSI checks", Ordered, func() {
 	var err error
 	var kubeClient *kubernetes.Clientset = &kubernetes.Clientset{}
-	var nodeID string
 	var endpoint string
 	var socketDir string
 
 	BeforeAll(func() {
 		socketDir, err = createSocketDir()
 		Expect(err).ShouldNot(HaveOccurred())
-		nodeID = "hostname"
 		endpoint = fmt.Sprintf("unix://%s/csi.sock", socketDir)
+		config := rclone.NodeServerConfig{DriverConfig: rclone.DriverConfig{Endpoint: endpoint, NodeID: "hostname"}}
 		kubeClient, err = kube.GetK8sClient()
 		Expect(err).ShouldNot(HaveOccurred())
 		os.Setenv("DRIVER_NAME", "csi-rclone")
 		go func() {
 			defer GinkgoRecover()
-			var nsDoublePointer **rclone.NodeServer
-			err := rclone.Run(context.Background(), &nodeID, &endpoint,
-				func(csiDriver *csicommon.CSIDriver) (csi.ControllerServer, csi.NodeServer, error) {
+			err := rclone.Run(context.Background(), &config.DriverConfig,
+				func(csiDriver *csicommon.CSIDriver) (*rclone.ControllerServer, *rclone.NodeServer, error) {
 					cs := rclone.NewControllerServer(csiDriver)
-					ns, err := rclone.NewNodeServer(csiDriver, "", "")
-					if err != nil {
-						return nil, nil, err
-					}
-					nsDoublePointer = &ns
-					return cs, ns, nil
+					ns, err := rclone.NewNodeServer(csiDriver, config.CacheDir, config.CacheSize)
+					Expect(err).ShouldNot(HaveOccurred())
+					return cs, ns, err
 				},
-				func(ctx context.Context) error {
-					return (*nsDoublePointer).Run(ctx)
+				func(ctx context.Context, cs *rclone.ControllerServer, ns *rclone.NodeServer) error {
+					Expect(ns).ShouldNot(BeNil())
+					return ns.Run(ctx)
 				},
 			)
 			Expect(err).ShouldNot(HaveOccurred())

@@ -167,7 +167,6 @@ type NodeServerConfig struct {
 	DriverConfig
 	CacheDir  string
 	CacheSize string
-	ns        *NodeServer
 }
 
 func (config *NodeServerConfig) CommandLineParameters(runCmd *cobra.Command, meters *[]metrics.Observable) error {
@@ -176,21 +175,19 @@ func (config *NodeServerConfig) CommandLineParameters(runCmd *cobra.Command, met
 		Short: "Start the CSI driver node service - expected to run in a daemonset on every node.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return Run(context.Background(), &config.DriverConfig,
-				func(csiDriver *csicommon.CSIDriver) (csi.ControllerServer, csi.NodeServer, error) {
+				func(csiDriver *csicommon.CSIDriver) (*ControllerServer, *NodeServer, error) {
 					ns, err := NewNodeServer(csiDriver, config.CacheDir, config.CacheSize)
 					if err != nil {
 						return nil, nil, err
 					}
-					// We go through a temporary variable to ensure that config.ns is only set with a correct NodeServer.
-					config.ns = ns
-					*meters = append(*meters, config.ns.metrics()...)
-					return nil, config.ns, err
+					*meters = append(*meters, ns.metrics()...)
+					return nil, ns, err
 				},
-				func(ctx context.Context) error {
-					if config.ns == nil {
+				func(ctx context.Context, cs *ControllerServer, ns *NodeServer) error {
+					if ns == nil {
 						return errors.New("node server uninitialized")
 					}
-					return config.ns.Run(ctx)
+					return ns.Run(ctx)
 				},
 			)
 		},
