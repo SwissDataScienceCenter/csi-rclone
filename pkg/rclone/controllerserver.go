@@ -59,7 +59,8 @@ func (config *ControllerServerConfig) CommandLineParameters(runCmd *cobra.Comman
 		Use:   "controller",
 		Short: "Start the CSI driver controller.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return Run(context.Background(),
+			ctx := cmd.Context()
+			return Run(ctx,
 				&config.DriverConfig,
 				func(csiDriver *csicommon.CSIDriver) (*ControllerServer, *NodeServer, error) {
 					cs := NewControllerServer(csiDriver)

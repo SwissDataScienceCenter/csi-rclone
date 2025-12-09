@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/common"
@@ -68,7 +67,7 @@ func main() {
 
 	if metricsServerConfig.Enabled {
 		// Gracefully exit the metrics background servers
-		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+		ctx, stop := signal.NotifyContext(context.Background(), common.InterruptSignals...)
 		defer stop()
 
 		metricsServer := metricsServerConfig.NewServer(ctx, &meters)
