@@ -61,12 +61,12 @@ func (config *ControllerServerConfig) CommandLineParameters(runCmd *cobra.Comman
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return Run(context.Background(),
 				&config.DriverConfig,
-				func(csiDriver *csicommon.CSIDriver) (csi.ControllerServer, csi.NodeServer, error) {
+				func(csiDriver *csicommon.CSIDriver) (*ControllerServer, *NodeServer, error) {
 					cs := NewControllerServer(csiDriver)
 					*meters = append(*meters, cs.metrics()...)
 					return cs, nil, nil
 				},
-				func(_ context.Context) error { return nil },
+				func(_ context.Context, cs *ControllerServer, ns *NodeServer) error { return nil },
 			)
 		},
 	}

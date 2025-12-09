@@ -13,9 +13,9 @@ import (
 
 const DriverVersion = "SwissDataScienceCenter"
 
-type DriverSetup func(csiDriver *csicommon.CSIDriver) (csi.ControllerServer, csi.NodeServer, error)
+type DriverSetup func(csiDriver *csicommon.CSIDriver) (*ControllerServer, *NodeServer, error)
 
-type DriverServe func(ctx context.Context) error
+type DriverServe func(ctx context.Context, cs *ControllerServer, ns *NodeServer) error
 
 type DriverConfig struct {
 	Endpoint string
@@ -60,7 +60,7 @@ func Run(ctx context.Context, config *DriverConfig, setup DriverSetup, serve Dri
 	defer s.Stop()
 	s.Start(config.Endpoint, is, cs, ns)
 
-	if err := serve(ctx); err != nil {
+	if err := serve(ctx, cs, ns); err != nil {
 		return err
 	}
 
