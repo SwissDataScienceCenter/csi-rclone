@@ -22,10 +22,10 @@ csiControllerRclone:
       #   memory: 128Mi
       # requests:
       #   cpu: 100m
-      #   memory: 128M
+      #   memory: 128Mi
     # If set, used to set GOMEMLIMIT, it should be strictly lower than
     # limits.memory to prevent OOMkills
-    goMemLimit: # 115Mi
+    goMemLimit: # 115MiB
     # Prometheus metrics
     metrics:
       enabled: true
@@ -68,7 +68,7 @@ csiNodepluginRclone:
       #   memory: 128Mi
     # If set, used to set GOMEMLIMIT, it should be strictly lower than
     # limits.memory to prevent OOMkills
-    goMemLimit: # 115Mi
+    goMemLimit: # 115MiB
     # Prometheus metrics
     metrics:
       enabled: true
