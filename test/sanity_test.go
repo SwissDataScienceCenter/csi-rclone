@@ -49,7 +49,7 @@ var _ = Describe("Sanity CSI checks", Ordered, func() {
 	var endpoint string
 	var socketDir string
 
-	BeforeAll(func() {
+	BeforeAll(func(ctx SpecContext) {
 		socketDir, err = createSocketDir()
 		Expect(err).ShouldNot(HaveOccurred())
 		endpoint = fmt.Sprintf("unix://%s/csi.sock", socketDir)

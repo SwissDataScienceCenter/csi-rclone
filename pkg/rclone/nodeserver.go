@@ -137,7 +137,7 @@ func NewNodeServer(csiDriver *csicommon.CSIDriver, cacheDir string, cacheSize st
 
 func (ns *NodeServer) Run(ctx context.Context) error {
 	defer ns.Stop()
-	return ns.RcloneOps.Run(func() error {
+	return ns.RcloneOps.Run(ctx, func() error {
 		return ns.remountTrackedVolumes(ctx)
 	})
 }
@@ -174,7 +174,8 @@ func (config *NodeServerConfig) CommandLineParameters(runCmd *cobra.Command, met
 		Use:   "node",
 		Short: "Start the CSI driver node service - expected to run in a daemonset on every node.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return Run(context.Background(), &config.DriverConfig,
+			ctx := cmd.Context()
+			return Run(ctx, &config.DriverConfig,
 				func(csiDriver *csicommon.CSIDriver) (*ControllerServer, *NodeServer, error) {
 					ns, err := NewNodeServer(csiDriver, config.CacheDir, config.CacheSize)
 					if err != nil {
