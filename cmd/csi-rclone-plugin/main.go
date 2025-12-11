@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -12,11 +13,13 @@ import (
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/metrics"
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/rclone"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"k8s.io/klog"
 )
 
 func exitOnError(err error) {
-	if err != nil {
+	// ParseFlags uses errors to return some status information, ignore it here.
+	if err != nil && !errors.Is(err, pflag.ErrHelp) {
 		klog.Error(err.Error())
 		os.Exit(1)
 	}
@@ -43,6 +46,10 @@ func main() {
 		Use:   "rclone",
 		Short: "CSI based rclone driver",
 	}
+	// Allow flags to be defined in subcommands, they will be reported at the Execute() step, with the help printed
+	// before exiting.
+	root.FParseErrWhitelist.UnknownFlags = true
+
 	metricsServerConfig.CommandLineParameters(root)
 
 	runCmd := &cobra.Command{
@@ -58,7 +65,7 @@ func main() {
 		Use:   "version",
 		Short: "Prints information about this version of csi rclone plugin",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("csi-rclone plugin Version: %s", rclone.DriverVersion)
+			fmt.Printf("csi-rclone plugin Version: %s\n", rclone.DriverVersion)
 		},
 	}
 	root.AddCommand(versionCmd)
