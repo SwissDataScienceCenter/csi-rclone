@@ -115,8 +115,9 @@ func NewNodeServer(csiDriver *csicommon.CSIDriver, cacheDir string, cacheSize st
 		RcloneOps:      NewRclone(kubeClient, rclonePort, cacheDir, cacheSize),
 		mountedVolumes: make(map[string]MountedVolume),
 		mutex:          &sync.Mutex{},
-		// Use kubelet plugin directory for state persistence
-		stateFile: "/var/lib/kubelet/plugins/csi-rclone/mounted_volumes.json",
+		// Use the host /tmp to allow recovery across pods restarts, but ensure cleanup on a node restart.
+		//This cleans up automatically the mounts when the user sessions linked are not around anymore.
+		stateFile: "/run/csi-rclone/mounted_volumes.json",
 	}
 
 	// Ensure the folder exists
