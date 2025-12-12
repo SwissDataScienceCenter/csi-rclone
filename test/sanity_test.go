@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/kubernetes-csi/csi-test/v5/pkg/sanity"
 	"github.com/kubernetes-csi/csi-test/v5/utils"
+	csicommon "github.com/kubernetes-csi/drivers/pkg/csi-common"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"google.golang.org/grpc"
@@ -46,24 +47,30 @@ var _ = Describe("Sanity CSI checks", Ordered, func() {
 	var err error
 	var kubeClient *kubernetes.Clientset = &kubernetes.Clientset{}
 	var endpoint string
-	var driver *rclone.Driver = &rclone.Driver{}
 	var socketDir string
 
-	BeforeAll(func() {
+	BeforeAll(func(ctx SpecContext) {
 		socketDir, err = createSocketDir()
 		Expect(err).ShouldNot(HaveOccurred())
 		endpoint = fmt.Sprintf("unix://%s/csi.sock", socketDir)
+		config := rclone.NodeServerConfig{DriverConfig: rclone.DriverConfig{Endpoint: endpoint, NodeID: "hostname"}}
 		kubeClient, err = kube.GetK8sClient()
 		Expect(err).ShouldNot(HaveOccurred())
 		os.Setenv("DRIVER_NAME", "csi-rclone")
-		driver = rclone.NewDriver("hostname", endpoint)
-		cs := rclone.NewControllerServer(driver.CSIDriver)
-		ns, err := rclone.NewNodeServer(driver.CSIDriver, "", "")
-		Expect(err).ShouldNot(HaveOccurred())
-		driver.WithControllerServer(cs).WithNodeServer(ns)
 		go func() {
 			defer GinkgoRecover()
-			err := driver.Run()
+			err := rclone.Run(context.Background(), &config.DriverConfig,
+				func(csiDriver *csicommon.CSIDriver) (*rclone.ControllerServer, *rclone.NodeServer, error) {
+					cs := rclone.NewControllerServer(csiDriver)
+					ns, err := rclone.NewNodeServer(csiDriver, config.CacheDir, config.CacheSize)
+					Expect(err).ShouldNot(HaveOccurred())
+					return cs, ns, err
+				},
+				func(ctx context.Context, cs *rclone.ControllerServer, ns *rclone.NodeServer) error {
+					Expect(ns).ShouldNot(BeNil())
+					return ns.Run(ctx)
+				},
+			)
 			Expect(err).ShouldNot(HaveOccurred())
 		}()
 		_, err = utils.Connect(endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -71,7 +78,6 @@ var _ = Describe("Sanity CSI checks", Ordered, func() {
 	})
 
 	AfterAll(func() {
-		driver.Stop()
 		os.RemoveAll(socketDir)
 		os.Unsetenv("DRIVER_NAME")
 	})
