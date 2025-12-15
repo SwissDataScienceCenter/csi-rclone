@@ -56,7 +56,7 @@ func Run(ctx context.Context, config *DriverConfig, setup DriverSetup, serve Dri
 		return setupErr
 	}
 
-	s := csicommon.NewNonBlockingGRPCServer()
+	s := NewMyGRPCServer()
 	defer s.Stop()
 	s.Start(config.Endpoint, is, cs, ns)
 
