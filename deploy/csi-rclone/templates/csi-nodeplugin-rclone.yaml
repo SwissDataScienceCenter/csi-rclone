@@ -157,6 +157,7 @@ spec:
     {{- end }}
       volumes:
       - hostPath:
+          # NOTE: We mount on /tmp because we want the saved configuration to not survive a whole node restart.
           path: /tmp/{{.Release.Namespace}}-{{.Release.Name}}-{{.Release.Revision}}
           type: DirectoryOrCreate
         name: node-temp-dir
