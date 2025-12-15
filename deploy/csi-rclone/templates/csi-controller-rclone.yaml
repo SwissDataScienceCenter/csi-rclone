@@ -54,8 +54,8 @@ spec:
         image: {{ .Values.csiControllerRclone.csiProvisioner.image.repository }}:{{ .Values.csiControllerRclone.csiProvisioner.image.tag | default .Chart.AppVersion }}
         imagePullPolicy: {{ .Values.csiControllerRclone.csiProvisioner.imagePullPolicy }}
         volumeMounts:
-          - name: socket-dir
-            mountPath: /csi
+          - mountPath: /csi
+            name: socket-dir
       - name: rclone
         args:
         - run
@@ -85,7 +85,7 @@ spec:
             fieldRef:
               fieldPath: spec.nodeName
         - name: CSI_ENDPOINT
-          value: "unix://plugin/csi.sock"
+          value: "unix://csi/csi.sock"
         - name: KUBERNETES_CLUSTER_DOMAIN
           value: {{ quote .Values.kubernetesClusterDomain }}
         {{- if .Values.csiControllerRclone.rclone.goMemLimit }}
@@ -114,7 +114,7 @@ spec:
           timeoutSeconds: 3
           periodSeconds: 2
         volumeMounts:
-        - mountPath: /plugin
+        - mountPath: /csi
           name: socket-dir
       - name: liveness-probe
         imagePullPolicy: Always
