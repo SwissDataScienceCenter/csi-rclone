@@ -115,8 +115,6 @@ func NewNodeServer(csiDriver *csicommon.CSIDriver, cacheDir string, cacheSize st
 		RcloneOps:      NewRclone(kubeClient, rclonePort, cacheDir, cacheSize),
 		mountedVolumes: make(map[string]MountedVolume),
 		mutex:          &sync.Mutex{},
-		// Use the host /tmp to allow recovery across pods restarts, but ensure cleanup on a node restart.
-		//This cleans up automatically the mounts when the user sessions linked are not around anymore.
 		stateFile: "/run/csi-rclone/mounted_volumes.json",
 	}
 
