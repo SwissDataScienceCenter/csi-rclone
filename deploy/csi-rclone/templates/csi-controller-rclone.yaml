@@ -127,10 +127,6 @@ spec:
         - mountPath: /csi
           name: socket-dir
       volumes:
-      - hostPath:
-          path: /tmp/{{.Release.Namespace}}-{{.Release.Name}}-{{.Release.Revision}}
-          type: DirectoryOrCreate
-        name: node-temp-dir
       - emptyDir: {}
         name: socket-dir
   updateStrategy: {}
