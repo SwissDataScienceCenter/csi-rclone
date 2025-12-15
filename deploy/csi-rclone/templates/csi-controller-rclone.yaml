@@ -114,8 +114,6 @@ spec:
           timeoutSeconds: 3
           periodSeconds: 2
         volumeMounts:
-        - mountPath: /run/csi-rclone
-          name: node-temp-dir
         - mountPath: /csi
           name: socket-dir
       - name: liveness-probe
