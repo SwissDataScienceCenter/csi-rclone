@@ -11,6 +11,7 @@ import (
 	"os"
 	os_exec "os/exec"
 	"syscall"
+	"time"
 
 	"strings"
 
@@ -425,6 +426,25 @@ func checkResponse(resp *http.Response) error {
 	return fmt.Errorf("received error from the rclone server: %s", result.String())
 }
 
+func waitForDaemon(ctx context.Context, port int) error {
+	// Wait for the daemon to have started
+	ctxWaitRcloneStart, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
+
+	req, err := createRcloneRequest(ctxWaitRcloneStart, http.MethodPost, nil, "/core/version", port)
+	if err != nil {
+		return err
+	}
+
+	for {
+		_, err = http.DefaultClient.Do(req)
+		// Keep trying until we retrieve a response, or we hit the deadline
+		if err == nil || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+	}
+}
+
 func (r *Rclone) start_daemon(ctx context.Context) error {
 	f, err := os.CreateTemp("", "rclone.conf")
 	if err != nil {
@@ -477,6 +497,11 @@ func (r *Rclone) start_daemon(ctx context.Context) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
+
+	if err := waitForDaemon(ctx, r.port); err != nil {
+		return err
+	}
+
 	go func() {
 		output := ""
 		for scanner.Scan() {
