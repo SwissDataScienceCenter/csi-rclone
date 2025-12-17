@@ -7,24 +7,33 @@ package rclone
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/SwissDataScienceCenter/csi-rclone/pkg/kube"
+	"github.com/SwissDataScienceCenter/csi-rclone/pkg/metrics"
+	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/fernet/fernet-go"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/spf13/cobra"
+	"golang.org/x/net/context"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"gopkg.in/ini.v1"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog"
-
-	"github.com/SwissDataScienceCenter/csi-rclone/pkg/kube"
-	"github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/fernet/fernet-go"
-	"golang.org/x/net/context"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	mountutils "k8s.io/mount-utils"
+	"k8s.io/utils/exec"
 	"k8s.io/utils/mount"
 
 	csicommon "github.com/kubernetes-csi/drivers/pkg/csi-common"
@@ -33,23 +42,190 @@ import (
 const CSI_ANNOTATION_PREFIX = "csi-rclone.dev"
 const pvcSecretNameAnnotation = CSI_ANNOTATION_PREFIX + "/secretName"
 
-type nodeServer struct {
+type NodeServer struct {
 	*csicommon.DefaultNodeServer
 	mounter   *mount.SafeFormatAndMount
 	RcloneOps Operations
+
+	// Track mounted volumes for automatic remounting
+	mountedVolumes map[string]MountedVolume
+	mutex          *sync.Mutex
+	stateFile      string
+}
+
+// unmountOldVols is used to unmount volumes after a restart on a node
+func unmountOldVols() error {
+	const mountType = "fuse.rclone"
+	const unmountTimeout = time.Second * 5
+	klog.Info("Checking for existing mounts")
+	mounter := mountutils.Mounter{}
+	mounts, err := mounter.List()
+	if err != nil {
+		return err
+	}
+	for _, mount := range mounts {
+		if mount.Type != mountType {
+			continue
+		}
+		err := mounter.UnmountWithForce(mount.Path, unmountTimeout)
+		if err != nil {
+			klog.Warningf("Failed to unmount %s because of %v.", mount.Path, err)
+			continue
+		}
+		klog.Infof("Sucessfully unmounted %s", mount.Path)
+	}
+	return nil
+}
+
+func getFreePort() (port int, err error) {
+	var a *net.TCPAddr
+	if a, err = net.ResolveTCPAddr("tcp", "localhost:0"); err == nil {
+		var l *net.TCPListener
+		if l, err = net.ListenTCP("tcp", a); err == nil {
+			defer l.Close()
+			return l.Addr().(*net.TCPAddr).Port, nil
+		}
+	}
+	return
+}
+
+func NewNodeServer(csiDriver *csicommon.CSIDriver, cacheDir string, cacheSize string) (*NodeServer, error) {
+	err := unmountOldVols()
+	if err != nil {
+		klog.Warningf("There was an error when trying to unmount old volumes: %v", err)
+		return nil, err
+	}
+
+	kubeClient, err := kube.GetK8sClient()
+	if err != nil {
+		return nil, err
+	}
+
+	rclonePort, err := getFreePort()
+	if err != nil {
+		return nil, fmt.Errorf("Cannot get a free TCP port to run rclone")
+	}
+
+	ns := &NodeServer{
+		DefaultNodeServer: csicommon.NewDefaultNodeServer(csiDriver),
+		mounter: &mount.SafeFormatAndMount{
+			Interface: mount.New(""),
+			Exec:      exec.New(),
+		},
+		RcloneOps:      NewRclone(kubeClient, rclonePort, cacheDir, cacheSize),
+		mountedVolumes: make(map[string]MountedVolume),
+		mutex:          &sync.Mutex{},
+		stateFile: "/run/csi-rclone/mounted_volumes.json",
+	}
+
+	// Ensure the folder exists
+	if err = os.MkdirAll(filepath.Dir(ns.stateFile), 0755); err != nil {
+		return nil, fmt.Errorf("failed to create state directory: %v", err)
+	}
+
+	// Load persisted state on startup
+	ns.mutex.Lock()
+	defer ns.mutex.Unlock()
+
+	if ns.mountedVolumes, err = readVolumeMap(ns.stateFile); err != nil {
+		klog.Warningf("Failed to load persisted volume state: %v", err)
+	}
+
+	return ns, nil
+}
+
+func (ns *NodeServer) Run(ctx context.Context) error {
+	defer ns.Stop()
+	return ns.RcloneOps.Run(ctx, func() error {
+		return ns.remountTrackedVolumes(ctx)
+	})
+}
+
+func (ns *NodeServer) metrics() []metrics.Observable {
+	var meters []metrics.Observable
+
+	meter := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "csi_rclone_active_volume_count",
+		Help: "Number of active (Mounted) volumes.",
+	})
+	meters = append(meters,
+		func() { meter.Set(float64(len(ns.mountedVolumes))) },
+	)
+	prometheus.MustRegister(meter)
+
+	return meters
+}
+
+func (ns *NodeServer) Stop() {
+	if err := ns.RcloneOps.Cleanup(); err != nil {
+		klog.Errorf("Failed to cleanup rclone ops: %v", err)
+	}
+}
+
+type NodeServerConfig struct {
+	DriverConfig
+	CacheDir  string
+	CacheSize string
+}
+
+func (config *NodeServerConfig) CommandLineParameters(runCmd *cobra.Command, meters *[]metrics.Observable) error {
+	runNode := &cobra.Command{
+		Use:   "node",
+		Short: "Start the CSI driver node service - expected to run in a daemonset on every node.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			return Run(ctx, &config.DriverConfig,
+				func(csiDriver *csicommon.CSIDriver) (*ControllerServer, *NodeServer, error) {
+					ns, err := NewNodeServer(csiDriver, config.CacheDir, config.CacheSize)
+					if err != nil {
+						return nil, nil, err
+					}
+					*meters = append(*meters, ns.metrics()...)
+					return nil, ns, err
+				},
+				func(ctx context.Context, cs *ControllerServer, ns *NodeServer) error {
+					if ns == nil {
+						return errors.New("node server uninitialized")
+					}
+					return ns.Run(ctx)
+				},
+			)
+		},
+	}
+	if err := config.DriverConfig.CommandLineParameters(runNode); err != nil {
+		return err
+	}
+
+	runNode.PersistentFlags().StringVar(&config.CacheDir, "cachedir", config.CacheDir, "cache dir")
+	runNode.PersistentFlags().StringVar(&config.CacheSize, "cachesize", config.CacheSize, "cache size")
+
+	runCmd.AddCommand(runNode)
+	return nil
+}
+
+type MountedVolume struct {
+	VolumeId        string            `json:"volume_id"`
+	TargetPath      string            `json:"target_path"`
+	Remote          string            `json:"remote"`
+	RemotePath      string            `json:"remote_path"`
+	ConfigData      string            `json:"config_data"`
+	ReadOnly        bool              `json:"read_only"`
+	Parameters      map[string]string `json:"parameters"`
+	SecretName      string            `json:"secret_name"`
+	SecretNamespace string            `json:"secret_namespace"`
 }
 
 // Mounting Volume (Preparation)
-func (ns *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {
+func (ns *NodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NodeStageVolume not implemented")
 }
 
-func (ns *nodeServer) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolumeRequest) (*csi.NodeUnstageVolumeResponse, error) {
+func (ns *NodeServer) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolumeRequest) (*csi.NodeUnstageVolumeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NodeUnstageVolume not implemented")
 }
 
 // Mounting Volume (Actual Mounting)
-func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
+func (ns *NodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
 	if err := validatePublishVolumeRequest(req); err != nil {
 		return nil, err
 	}
@@ -141,6 +317,10 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+
+	// Track the mounted volume for automatic remounting
+	ns.trackMountedVolume(volumeId, targetPath, remote, remotePath, configData, readOnly, flags, secretName, secretNamespace)
+
 	// err = ns.WaitForMountAvailable(targetPath)
 	// if err != nil {
 	// 	return nil, status.Error(codes.Internal, err.Error())
@@ -303,7 +483,7 @@ func extractConfigData(parameters map[string]string) (string, map[string]string)
 }
 
 // Unmounting Volumes
-func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error) {
+func (ns *NodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error) {
 	klog.Infof("NodeUnpublishVolume called with: %s", req)
 	if err := validateUnPublishVolumeRequest(req); err != nil {
 		return nil, err
@@ -323,6 +503,10 @@ func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 	if err := ns.RcloneOps.Unmount(ctx, req.GetVolumeId(), targetPath); err != nil {
 		klog.Warningf("Unmounting volume failed: %s", err)
 	}
+
+	// Remove the volume from tracking
+	ns.removeTrackedVolume(req.GetVolumeId())
+
 	mount.CleanupMountPoint(req.GetTargetPath(), ns.mounter, false)
 	return &csi.NodeUnpublishVolumeResponse{}, nil
 }
@@ -340,11 +524,128 @@ func validateUnPublishVolumeRequest(req *csi.NodeUnpublishVolumeRequest) error {
 }
 
 // Resizing Volume
-func (*nodeServer) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolumeRequest) (*csi.NodeExpandVolumeResponse, error) {
+func (*NodeServer) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolumeRequest) (*csi.NodeExpandVolumeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NodeExpandVolume not implemented")
 }
 
-func (ns *nodeServer) WaitForMountAvailable(mountpoint string) error {
+// Track mounted volume for automatic remounting
+func (ns *NodeServer) trackMountedVolume(volumeId, targetPath, remote, remotePath, configData string, readOnly bool, parameters map[string]string, secretName, secretNamespace string) {
+	ns.mutex.Lock()
+	defer ns.mutex.Unlock()
+
+	ns.mountedVolumes[volumeId] = MountedVolume{
+		VolumeId:        volumeId,
+		TargetPath:      targetPath,
+		Remote:          remote,
+		RemotePath:      remotePath,
+		ConfigData:      configData,
+		ReadOnly:        readOnly,
+		Parameters:      parameters,
+		SecretName:      secretName,
+		SecretNamespace: secretNamespace,
+	}
+	klog.Infof("Tracked mounted volume %s at path %s", volumeId, targetPath)
+
+	if err := writeVolumeMap(ns.stateFile, ns.mountedVolumes); err != nil {
+		klog.Errorf("Failed to persist volume state: %v", err)
+	}
+}
+
+// Remove tracked volume when unmounted
+func (ns *NodeServer) removeTrackedVolume(volumeId string) {
+	ns.mutex.Lock()
+	defer ns.mutex.Unlock()
+
+	delete(ns.mountedVolumes, volumeId)
+	klog.Infof("Removed tracked volume %s", volumeId)
+
+	if err := writeVolumeMap(ns.stateFile, ns.mountedVolumes); err != nil {
+		klog.Errorf("Failed to persist volume state: %v", err)
+	}
+}
+
+// Automatically remount all tracked volumes after daemon restart
+func (ns *NodeServer) remountTrackedVolumes(ctx context.Context) error {
+	type mountResult struct {
+		volumeID string
+		err      error
+	}
+
+	ns.mutex.Lock()
+	defer ns.mutex.Unlock()
+
+	volumesCount := len(ns.mountedVolumes)
+
+	if volumesCount == 0 {
+		klog.Info("No tracked volumes to remount")
+		return nil
+	}
+
+	klog.Infof("Remounting %d tracked volumes", volumesCount)
+
+	// Limit the number of active workers to the number of CPU threads (arbitrarily chosen)
+	limits := make(chan bool, runtime.GOMAXPROCS(0))
+	defer close(limits)
+
+	results := make(chan mountResult, volumesCount)
+	defer close(results)
+
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	for volumeId, mv := range ns.mountedVolumes {
+		go func() {
+			limits <- true // block until there is a free slot in the queue
+			defer func() {
+				<-limits // free a slot in the queue when we exit
+			}()
+
+			ctxWithMountTimeout, cancel := context.WithTimeout(ctxWithTimeout, 30*time.Second)
+			defer cancel()
+
+			klog.Infof("Remounting volume %s to %s", volumeId, mv.TargetPath)
+
+			// Create the mount directory if it doesn't exist
+			var err error
+			if err = os.MkdirAll(mv.TargetPath, 0750); err != nil {
+				klog.Errorf("Failed to create mount directory %s: %v", mv.TargetPath, err)
+			} else {
+				// Remount the volume
+				rcloneVol := &RcloneVolume{
+					ID:         mv.VolumeId,
+					Remote:     mv.Remote,
+					RemotePath: mv.RemotePath,
+				}
+
+				err = ns.RcloneOps.Mount(ctxWithMountTimeout, rcloneVol, mv.TargetPath, mv.ConfigData, mv.ReadOnly, mv.Parameters)
+			}
+
+			results <- mountResult{volumeId, err}
+		}()
+	}
+
+	for {
+		select {
+		case result := <-results:
+			volumesCount--
+			if result.err != nil {
+				klog.Errorf("Failed to remount volume %s: %v", result.volumeID, result.err)
+				// Don't return error here, continue with other volumes not to block all users because of a failed mount.
+				delete(ns.mountedVolumes, result.volumeID)
+				// Should we keep it on disk? This will be lost on the first new mount which will override the file.
+			} else {
+				klog.Infof("Successfully remounted volume %s", result.volumeID)
+			}
+			if volumesCount == 0 {
+				return nil
+			}
+		case <-ctxWithTimeout.Done():
+			return ctxWithTimeout.Err()
+		}
+	}
+}
+
+func (ns *NodeServer) WaitForMountAvailable(mountpoint string) error {
 	for {
 		select {
 		case <-time.After(100 * time.Millisecond):
@@ -356,4 +657,48 @@ func (ns *nodeServer) WaitForMountAvailable(mountpoint string) error {
 			return errors.New("wait for mount available timeout")
 		}
 	}
+}
+
+// Persist volume state to disk
+func writeVolumeMap(filename string, volumes map[string]MountedVolume) error {
+	if filename == "" {
+		return nil
+	}
+
+	data, err := json.Marshal(volumes)
+	if err != nil {
+		return fmt.Errorf("failed to marshal volume state: %v", err)
+	}
+
+	if err := os.WriteFile(filename, data, 0600); err != nil {
+		return fmt.Errorf("failed to write state file: %v", err)
+	}
+
+	klog.Infof("Persisted volume state to %s", filename)
+	return nil
+}
+
+// Load volume state from disk
+func readVolumeMap(filename string) (map[string]MountedVolume, error) {
+	volumes := make(map[string]MountedVolume)
+
+	if filename == "" {
+		return volumes, nil
+	}
+
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		if os.IsNotExist(err) {
+			klog.Info("No persisted volume state found, starting fresh")
+			return volumes, nil
+		}
+		return volumes, fmt.Errorf("failed to read state file: %v", err)
+	}
+
+	if err := json.Unmarshal(data, &volumes); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal volume state: %v", err)
+	}
+
+	klog.Infof("Loaded %d tracked volumes from %s", len(volumes), filename)
+	return volumes, nil
 }
