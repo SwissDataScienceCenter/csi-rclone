@@ -430,8 +430,7 @@ func waitForDaemon(ctx context.Context, port int) error {
 	// Wait for the daemon to have started
 	ctxWaitRcloneStart, cancel := context.WithTimeout(ctx, 1*time.Second)
 	defer cancel()
-
-	req, err := createRcloneRequest(ctxWaitRcloneStart, http.MethodPost, nil, "/core/version", port)
+	req, err := createRcloneRequest(ctxWaitRcloneStart, http.MethodPost, bytes.NewBufferString("{}"), "/core/version", port)
 	if err != nil {
 		return err
 	}
