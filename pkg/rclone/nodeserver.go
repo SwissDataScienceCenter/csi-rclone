@@ -39,9 +39,6 @@ import (
 	csicommon "github.com/kubernetes-csi/drivers/pkg/csi-common"
 )
 
-const CSI_ANNOTATION_PREFIX = "csi-rclone.dev"
-const pvcSecretNameAnnotation = CSI_ANNOTATION_PREFIX + "/secretName"
-
 type NodeServer struct {
 	*csicommon.DefaultNodeServer
 	mounter   *mount.SafeFormatAndMount
@@ -134,7 +131,7 @@ func NewNodeServer(csiDriver *csicommon.CSIDriver, cacheDir string, cacheSize st
 	return ns, nil
 }
 
-func (ns *NodeServer) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetCapabilitiesRequest) (*csi.NodeGetCapabilitiesResponse, error) {
+func (ns *NodeServer) NodeGetCapabilities(_ context.Context, _ *csi.NodeGetCapabilitiesRequest) (*csi.NodeGetCapabilitiesResponse, error) {
 	return &csi.NodeGetCapabilitiesResponse{
 		Capabilities: []*csi.NodeServiceCapability{
 			{
@@ -413,7 +410,7 @@ func validateNodePublishVolumeRequest(req *csi.NodePublishVolumeRequest) error {
 	}
 }
 
-func (ns *NodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
+func (ns *NodeServer) NodePublishVolume(_ context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
 	if err := validateNodePublishVolumeRequest(req); err != nil {
 		return nil, err
 	}
@@ -482,7 +479,7 @@ func extractFlags(volumeContext map[string]string, secret map[string]string, pvc
 	if len(secret) > 0 {
 		// Needs byte to string casting for map values
 		for k, v := range secret {
-			flags[k] = string(v)
+			flags[k] = v
 		}
 	} else {
 		klog.Infof("No csi-rclone connection defaults secret found.")
@@ -543,7 +540,7 @@ func decryptSecrets(flags map[string]string, savedPvcSecret *v1.Secret) (map[str
 
 	if len(savedPvcSecret.Data) > 0 {
 		for k, v := range savedPvcSecret.Data {
-			savedSecrets[k] = string(fernet.VerifyAndDecrypt([]byte(v), 0, []*fernet.Key{fernetKey}))
+			savedSecrets[k] = string(fernet.VerifyAndDecrypt(v, 0, []*fernet.Key{fernetKey}))
 		}
 	}
 
@@ -585,7 +582,7 @@ func extractConfigData(parameters map[string]string) (string, map[string]string)
 }
 
 // Unmounting Volumes
-func (ns *NodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error) {
+func (ns *NodeServer) NodeUnpublishVolume(_ context.Context, req *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error) {
 	klog.Infof("NodeUnpublishVolume called with: %s", req)
 	if err := validateUnPublishVolumeRequest(req); err != nil {
 		return nil, err
@@ -614,7 +611,7 @@ func validateUnPublishVolumeRequest(req *csi.NodeUnpublishVolumeRequest) error {
 }
 
 // Resizing Volume
-func (*NodeServer) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolumeRequest) (*csi.NodeExpandVolumeResponse, error) {
+func (*NodeServer) NodeExpandVolume(_ context.Context, _ *csi.NodeExpandVolumeRequest) (*csi.NodeExpandVolumeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NodeExpandVolume not implemented")
 }
 
