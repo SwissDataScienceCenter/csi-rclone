@@ -1,6 +1,8 @@
 {
     "name": "CSI rclone devcontainer",
     "image": "mcr.microsoft.com/devcontainers/base:bookworm",
+    "remoteUser": "root",
+    "containerUser": "root",
     "features": {
         "ghcr.io/devcontainers/features/git:1": {},
         "ghcr.io/devcontainers/features/go:1": {},

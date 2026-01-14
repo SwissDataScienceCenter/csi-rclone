@@ -115,7 +115,7 @@ func NewNodeServer(csiDriver *csicommon.CSIDriver, cacheDir string, cacheSize st
 		RcloneOps:      NewRclone(kubeClient, rclonePort, cacheDir, cacheSize),
 		mountedVolumes: make(map[string]MountedVolume),
 		mutex:          &sync.Mutex{},
-		stateFile: "/run/csi-rclone/mounted_volumes.json",
+		stateFile:      "/run/csi-rclone/mounted_volumes.json",
 	}
 
 	// Ensure the folder exists
@@ -132,6 +132,20 @@ func NewNodeServer(csiDriver *csicommon.CSIDriver, cacheDir string, cacheSize st
 	}
 
 	return ns, nil
+}
+
+func (ns *NodeServer) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetCapabilitiesRequest) (*csi.NodeGetCapabilitiesResponse, error) {
+	return &csi.NodeGetCapabilitiesResponse{
+		Capabilities: []*csi.NodeServiceCapability{
+			{
+				Type: &csi.NodeServiceCapability_Rpc{
+					Rpc: &csi.NodeServiceCapability_RPC{
+						Type: csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME,
+					},
+				},
+			},
+		},
+	}, nil
 }
 
 func (ns *NodeServer) Run(ctx context.Context) error {
@@ -216,24 +230,38 @@ type MountedVolume struct {
 }
 
 // Mounting Volume (Preparation)
-func (ns *NodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method NodeStageVolume not implemented")
-}
-
-func (ns *NodeServer) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolumeRequest) (*csi.NodeUnstageVolumeResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method NodeUnstageVolume not implemented")
-}
-
-// Mounting Volume (Actual Mounting)
-func (ns *NodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
-	if err := validatePublishVolumeRequest(req); err != nil {
-		return nil, err
+func validateNodeStageVolumeRequest(req *csi.NodeStageVolumeRequest) error {
+	if req.GetVolumeId() == "" {
+		return status.Error(codes.InvalidArgument, "empty volume id")
 	}
 
-	targetPath := req.GetTargetPath()
-	volumeId := req.GetVolumeId()
+	if req.GetStagingTargetPath() == "" {
+		return status.Error(codes.InvalidArgument, "empty staging path")
+	}
+
+	capability := req.GetVolumeCapability()
+	if capability == nil {
+		return status.Error(codes.InvalidArgument, "no volume capability set")
+	}
+
+	switch capability.GetAccessMode().GetMode() {
+	case csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER:
+		return nil
+	case csi.VolumeCapability_AccessMode_SINGLE_NODE_SINGLE_WRITER:
+		return nil
+	case csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY:
+		return nil
+	default:
+		return status.Errorf(codes.FailedPrecondition, "Volume access mode not supported %v", capability.GetAccessMode().GetMode())
+	}
+}
+
+func isNodeStageReqReadOnly(req *csi.NodeStageVolumeRequest) bool {
+	return req.GetVolumeCapability().GetAccessMode().GetMode() == csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY
+}
+
+func getVolumeConfig(ctx context.Context, req *csi.NodeStageVolumeRequest) (*MountedVolume, error) {
 	volumeContext := req.GetVolumeContext()
-	readOnly := req.GetReadonly()
 	secretName, foundSecret := volumeContext["secretName"]
 	secretNamespace, foundSecretNamespace := volumeContext["secretNamespace"]
 	// For backwards compatibility - prior to the change in #20 this field held the namespace
@@ -271,43 +299,44 @@ func (ns *NodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 	remote, remotePath, configData, flags, e := extractFlags(req.GetVolumeContext(), req.GetSecrets(), pvcSecret, savedPvcSecret)
 	delete(flags, "secretName")
 	delete(flags, "namespace")
-	if e != nil {
-		klog.Warningf("storage parameter error: %s", e)
-		return nil, e
+
+	return &MountedVolume{
+		VolumeId:        req.GetVolumeId(),
+		TargetPath:      req.GetStagingTargetPath(),
+		Remote:          remote,
+		RemotePath:      remotePath,
+		ConfigData:      configData,
+		ReadOnly:        isNodeStageReqReadOnly(req),
+		Parameters:      flags,
+		SecretName:      secretName,
+		SecretNamespace: secretNamespace,
+	}, e
+}
+
+func (ns *NodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {
+	if err := validateNodeStageVolumeRequest(req); err != nil {
+		return nil, err
 	}
-	notMnt, err := ns.mounter.IsLikelyNotMountPoint(targetPath)
+
+	// Already staged ?
+	if volume, ok := ns.mountedVolumes[req.GetVolumeId()]; ok {
+		if volume.TargetPath == req.GetStagingTargetPath() && volume.ReadOnly == isNodeStageReqReadOnly(req) {
+			return &csi.NodeStageVolumeResponse{}, nil
+		}
+		return nil, status.Error(codes.AlreadyExists, "Requested Volume capability incompatible with currently staged volume")
+	}
+
+	volume, err := getVolumeConfig(ctx, req)
 	if err != nil {
-		if os.IsNotExist(err) {
-			if err := os.MkdirAll(targetPath, 0750); err != nil {
-				return nil, status.Error(codes.Internal, err.Error())
-			}
-			notMnt = true
-		} else {
-			return nil, status.Error(codes.Internal, err.Error())
-		}
-	}
-
-	if !notMnt {
-		// testing original mount point, make sure the mount link is valid
-		if _, err := os.ReadDir(targetPath); err == nil {
-			klog.Infof("already mounted to target %s", targetPath)
-			return &csi.NodePublishVolumeResponse{}, nil
-		}
-		// todo: mount link is invalid, now unmount and remount later (built-in functionality)
-		klog.Warningf("ReadDir %s failed with %v, unmount this directory", targetPath, err)
-
-		if err := ns.mounter.Unmount(targetPath); err != nil {
-			klog.Errorf("Unmount directory %s failed with %v", targetPath, err)
-			return nil, err
-		}
+		return nil, err
 	}
 
 	rcloneVol := &RcloneVolume{
-		ID:         volumeId,
-		Remote:     remote,
-		RemotePath: remotePath,
+		ID:         volume.VolumeId,
+		Remote:     volume.Remote,
+		RemotePath: volume.RemotePath,
 	}
-	err = ns.RcloneOps.Mount(ctx, rcloneVol, targetPath, configData, readOnly, flags)
+	err = ns.RcloneOps.Mount(ctx, rcloneVol, volume.TargetPath, volume.ConfigData, volume.ReadOnly, volume.Parameters)
 	if err != nil {
 		if os.IsPermission(err) {
 			return nil, status.Error(codes.PermissionDenied, err.Error())
@@ -319,12 +348,100 @@ func (ns *NodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 	}
 
 	// Track the mounted volume for automatic remounting
-	ns.trackMountedVolume(volumeId, targetPath, remote, remotePath, configData, readOnly, flags, secretName, secretNamespace)
+	ns.trackMountedVolume(volume)
 
-	// err = ns.WaitForMountAvailable(targetPath)
-	// if err != nil {
-	// 	return nil, status.Error(codes.Internal, err.Error())
-	// }
+	return &csi.NodeStageVolumeResponse{}, nil
+}
+
+func validateNodeUnstageVolumeRequest(req *csi.NodeUnstageVolumeRequest) error {
+	if req.GetVolumeId() == "" {
+		return status.Error(codes.InvalidArgument, "empty volume id")
+	}
+	if req.GetStagingTargetPath() == "" {
+		return status.Error(codes.InvalidArgument, "empty staging path")
+	}
+
+	return nil
+}
+
+func (ns *NodeServer) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolumeRequest) (*csi.NodeUnstageVolumeResponse, error) {
+	if err := validateNodeUnstageVolumeRequest(req); err != nil {
+		return nil, err
+	}
+
+	if volume, ok := ns.mountedVolumes[req.GetVolumeId()]; ok {
+		if err := ns.RcloneOps.Unmount(ctx, volume.VolumeId, volume.TargetPath); err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+
+		// Remove the volume from tracking
+		ns.removeTrackedVolume(req.GetVolumeId())
+	} else {
+		return nil, status.Error(codes.NotFound, "volume not found")
+	}
+
+	return &csi.NodeUnstageVolumeResponse{}, nil
+}
+
+func validateNodePublishVolumeRequest(req *csi.NodePublishVolumeRequest) error {
+	if req.GetVolumeId() == "" {
+		return status.Error(codes.InvalidArgument, "empty volume id")
+	}
+
+	if req.GetStagingTargetPath() == "" {
+		return status.Error(codes.InvalidArgument, "empty staging path")
+	}
+
+	if req.GetTargetPath() == "" {
+		return status.Error(codes.InvalidArgument, "empty target path")
+	}
+
+	capability := req.GetVolumeCapability()
+	if capability == nil {
+		return status.Error(codes.InvalidArgument, "no volume capability set")
+	}
+
+	switch capability.GetAccessMode().GetMode() {
+	case csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER:
+		return nil
+	case csi.VolumeCapability_AccessMode_SINGLE_NODE_SINGLE_WRITER:
+		return nil
+	case csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY:
+		return nil
+	default:
+		return status.Errorf(codes.FailedPrecondition, "Volume access mode not supported %v", capability.GetAccessMode().GetMode())
+	}
+}
+
+func (ns *NodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
+	if err := validateNodePublishVolumeRequest(req); err != nil {
+		return nil, err
+	}
+
+	volume, ok := ns.mountedVolumes[req.GetVolumeId()]
+	if !ok {
+		return nil, status.Error(codes.NotFound, "Volume not found")
+	}
+	if volume.ReadOnly && !req.GetReadonly() {
+		return nil, status.Error(codes.AlreadyExists, "Volume is already published")
+	}
+
+	if mounts, err := ns.mounter.GetMountRefs(req.GetTargetPath()); err == nil && len(mounts) > 0 {
+		return &csi.NodePublishVolumeResponse{}, nil
+	}
+
+	if err := os.MkdirAll(req.GetTargetPath(), 0755); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	options := []string{"bind"}
+	if req.GetReadonly() {
+		options = append(options, "remount", "ro")
+	}
+	if err := ns.mounter.Mount(req.GetStagingTargetPath(), req.GetTargetPath(), "", options); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
 	return &csi.NodePublishVolumeResponse{}, nil
 }
 
@@ -354,21 +471,6 @@ func getPVC(ctx context.Context, namespace, name string) (*v1.PersistentVolumeCl
 		return nil, fmt.Errorf("Failed to read PVC with K8s client because name is blank")
 	}
 	return cs.CoreV1().PersistentVolumeClaims(namespace).Get(ctx, name, metav1.GetOptions{})
-}
-
-func validatePublishVolumeRequest(req *csi.NodePublishVolumeRequest) error {
-	if req.GetVolumeId() == "" {
-		return status.Error(codes.InvalidArgument, "empty volume id")
-	}
-
-	if req.GetTargetPath() == "" {
-		return status.Error(codes.InvalidArgument, "empty target path")
-	}
-
-	if req.GetVolumeCapability() == nil {
-		return status.Error(codes.InvalidArgument, "no volume capability set")
-	}
-	return nil
 }
 
 func extractFlags(volumeContext map[string]string, secret map[string]string, pvcSecret *v1.Secret, savedPvcSecret *v1.Secret) (string, string, string, map[string]string, error) {
@@ -488,26 +590,14 @@ func (ns *NodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 	if err := validateUnPublishVolumeRequest(req); err != nil {
 		return nil, err
 	}
-	targetPath := req.GetTargetPath()
-	if len(targetPath) == 0 {
-		klog.Warning("no target path provided for NodeUnpublishVolume")
-		return nil, status.Error(codes.InvalidArgument, "NodeUnpublishVolume Target Path must be provided")
+
+	if err := mount.CleanupMountPoint(req.GetTargetPath(), ns.mounter, true); err != nil {
+		if mounts, err := ns.mounter.GetMountRefs(req.GetTargetPath()); err == nil && len(mounts) == 0 {
+			return &csi.NodeUnpublishVolumeResponse{}, nil
+		}
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	if _, err := ns.RcloneOps.GetVolumeById(ctx, req.GetVolumeId()); err == ErrVolumeNotFound {
-		klog.Warning("VolumeId not found for NodeUnpublishVolume")
-		mount.CleanupMountPoint(req.GetTargetPath(), ns.mounter, false)
-		return &csi.NodeUnpublishVolumeResponse{}, nil
-	}
-
-	if err := ns.RcloneOps.Unmount(ctx, req.GetVolumeId(), targetPath); err != nil {
-		klog.Warningf("Unmounting volume failed: %s", err)
-	}
-
-	// Remove the volume from tracking
-	ns.removeTrackedVolume(req.GetVolumeId())
-
-	mount.CleanupMountPoint(req.GetTargetPath(), ns.mounter, false)
 	return &csi.NodeUnpublishVolumeResponse{}, nil
 }
 
@@ -529,22 +619,12 @@ func (*NodeServer) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolu
 }
 
 // Track mounted volume for automatic remounting
-func (ns *NodeServer) trackMountedVolume(volumeId, targetPath, remote, remotePath, configData string, readOnly bool, parameters map[string]string, secretName, secretNamespace string) {
+func (ns *NodeServer) trackMountedVolume(volume *MountedVolume) {
 	ns.mutex.Lock()
 	defer ns.mutex.Unlock()
 
-	ns.mountedVolumes[volumeId] = MountedVolume{
-		VolumeId:        volumeId,
-		TargetPath:      targetPath,
-		Remote:          remote,
-		RemotePath:      remotePath,
-		ConfigData:      configData,
-		ReadOnly:        readOnly,
-		Parameters:      parameters,
-		SecretName:      secretName,
-		SecretNamespace: secretNamespace,
-	}
-	klog.Infof("Tracked mounted volume %s at path %s", volumeId, targetPath)
+	ns.mountedVolumes[volume.VolumeId] = *volume
+	klog.Infof("Tracked mounted volume %s at path %s", volume.VolumeId, volume.TargetPath)
 
 	if err := writeVolumeMap(ns.stateFile, ns.mountedVolumes); err != nil {
 		klog.Errorf("Failed to persist volume state: %v", err)
@@ -641,20 +721,6 @@ func (ns *NodeServer) remountTrackedVolumes(ctx context.Context) error {
 			}
 		case <-ctxWithTimeout.Done():
 			return ctxWithTimeout.Err()
-		}
-	}
-}
-
-func (ns *NodeServer) WaitForMountAvailable(mountpoint string) error {
-	for {
-		select {
-		case <-time.After(100 * time.Millisecond):
-			notMnt, _ := ns.mounter.IsLikelyNotMountPoint(mountpoint)
-			if !notMnt {
-				return nil
-			}
-		case <-time.After(3 * time.Second):
-			return errors.New("wait for mount available timeout")
 		}
 	}
 }

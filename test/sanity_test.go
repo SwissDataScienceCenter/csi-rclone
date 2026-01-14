@@ -189,8 +189,8 @@ provider=AWS`},
 					"remotePath": "giab/",
 					"secretKey":  "cw_0x689RpI-jtRR7oE8h_eQsKImvJapLeSbXpwF4e4=",
 					"configData": `[my-s3]
-type=<sensitive>
-provider=AWS`},
+type=s3
+provider=AWS`}, // The type has to be set to something valid or rclone fails to find the proper backend plugin.
 				Type: "Opaque",
 			}, metav1.CreateOptions{})
 			className := "csi-rclone-secret-annotation"
@@ -227,7 +227,7 @@ provider=AWS`},
 		})
 	})
 
-	Context("Serets from annotations with decryption", Ordered, func() {
+	Context("Secrets from annotations with decryption", Ordered, func() {
 		var cfg *sanity.TestConfig = &sanity.TestConfig{}
 		var testCtx *sanity.TestContext = &sanity.TestContext{}
 
