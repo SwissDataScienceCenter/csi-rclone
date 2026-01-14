@@ -248,13 +248,22 @@ func validateNodeStageVolumeRequest(req *csi.NodeStageVolumeRequest) error {
 		return nil
 	case csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY:
 		return nil
+	case csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY:
+		return nil
 	default:
 		return status.Errorf(codes.FailedPrecondition, "Volume access mode not supported %v", capability.GetAccessMode().GetMode())
 	}
 }
 
 func isNodeStageReqReadOnly(req *csi.NodeStageVolumeRequest) bool {
-	return req.GetVolumeCapability().GetAccessMode().GetMode() == csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY
+	switch req.GetVolumeCapability().GetAccessMode().GetMode() {
+	case csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY:
+		return true
+	case csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY:
+		return true
+	default:
+		return false
+	}
 }
 
 func getVolumeConfig(ctx context.Context, req *csi.NodeStageVolumeRequest) (*MountedVolume, error) {
@@ -404,6 +413,8 @@ func validateNodePublishVolumeRequest(req *csi.NodePublishVolumeRequest) error {
 	case csi.VolumeCapability_AccessMode_SINGLE_NODE_SINGLE_WRITER:
 		return nil
 	case csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY:
+		return nil
+	case csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY:
 		return nil
 	default:
 		return status.Errorf(codes.FailedPrecondition, "Volume access mode not supported %v", capability.GetAccessMode().GetMode())

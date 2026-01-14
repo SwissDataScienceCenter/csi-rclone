@@ -44,6 +44,8 @@ func Run(ctx context.Context, config *DriverConfig, setup DriverSetup, serve Dri
 	driver := csicommon.NewCSIDriver(driverName, DriverVersion, config.NodeID)
 	driver.AddVolumeCapabilityAccessModes([]csi.VolumeCapability_AccessMode_Mode{
 		csi.VolumeCapability_AccessMode_SINGLE_NODE_SINGLE_WRITER,
+		csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY,
+		csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY,
 	})
 	driver.AddControllerServiceCapabilities(
 		[]csi.ControllerServiceCapability_RPC_Type{
