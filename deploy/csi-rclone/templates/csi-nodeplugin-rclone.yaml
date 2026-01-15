@@ -15,6 +15,8 @@ spec:
       labels:
         app: csi-nodeplugin-rclone
       {{- include "chart.selectorLabels" . | nindent 8 }}
+      annotations:
+      {{- toYaml ".Values.csiNodepluginRclone.podAnnotations" . | nindent 8 }}
     spec:
       serviceAccountName: {{ include "chart.fullname" . }}-nodeplugin
       dnsPolicy: ClusterFirstWithHostNet
