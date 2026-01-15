@@ -16,7 +16,7 @@ spec:
       labels:
         app: csi-controller-rclone
       annotations:
-      {{- toYaml ".Values.csiControllerRclone.podAnnotations" . | nindent 8 }}
+      {{- toYaml .Values.csiControllerRclone.podAnnotations | nindent 8 }}
     spec:
       serviceAccountName: {{ include "chart.fullname" . }}-controller
       containers:
