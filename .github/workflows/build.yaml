@@ -1,0 +1,120 @@
+name: Build dev version
+
+on:
+  push:
+  # manual-
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  CHART_NAME: ${{ github.repository }}/helm-chart
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-image:
+    runs-on: ubuntu-24.04
+    outputs:
+      image: ${{ steps.docker_image.outputs.image }}
+      image_repository: ${{ steps.docker_image.outputs.image_repository }}
+      image_tag: ${{ steps.docker_image.outputs.image_tag }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Docker image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: type=sha
+      - name: Extract Docker image name
+        id: docker_image
+        env:
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          IMAGE=$(echo "$IMAGE_TAGS" | cut -d" " -f1)
+          IMAGE_REPOSITORY=$(echo "$IMAGE" | cut -d":" -f1)
+          IMAGE_TAG=$(echo "$IMAGE" | cut -d":" -f2)
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "image_repository=$IMAGE_REPOSITORY" >> "$GITHUB_OUTPUT"
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+      - name: Set up Docker buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Set up Docker
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ steps.docker_image.outputs.image_repository }}:buildcache
+          cache-to: type=registry,ref=${{ steps.docker_image.outputs.image_repository }}:buildcache,mode=max
+
+  build-chart:
+    runs-on: ubuntu-24.04
+    needs: [build-image]
+    outputs:
+      chart: ${{ steps.helm_chart.outputs.chart }}
+      chart_repository: ${{ steps.helm_chart.outputs.chart_repository }}
+      chart_tag: ${{ steps.helm_chart.outputs.chart_tag }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      # - name: Chart metadata
+      #   id: meta
+      #   uses: docker/metadata-action@v5
+      #   with:
+      #     images: ${{ env.REGISTRY }}/${{ env.CHART_NAME }}
+      #     tags: type=sha
+      # - name: Extract Helm chart name
+      #   id: helm_chart
+      #   env:
+      #     CHART_TAGS: ${{ steps.meta.outputs.tags }}
+      #   run: |
+      #     CHART=$(echo "$CHART_TAGS" | cut -d" " -f1)
+      #     CHART_REPOSITORY=$(echo "$CHART" | cut -d":" -f1)
+      #     CHART_TAG=$(echo "$CHART" | cut -d":" -f2)
+      #     echo "chart=$CHART" >> "$GITHUB_OUTPUT"
+      #     echo "chart_repository=$CHART_REPOSITORY" >> "$GITHUB_OUTPUT"
+      #     echo "chart_tag=$CHART_TAG" >> "$GITHUB_OUTPUT"
+      - name: Setup Python 
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Setup Chartpress
+        run: |
+          pip install chartpress
+      - name: Setup Helm
+        uses: azure/setup-helm@v4.3.0
+      - name: Build Helm chart
+        run: |
+          IMAGE_REPOSITORY=${{ needs.build-image.outputs.image_repository }}
+          IMAGE_TAG=${{ needs.build-image.outputs.image_tag }}
+          helm dep update deploy/csi-rclone
+          chartpress --image-prefix "${{ env.REGISTRY }}/" --tag $IMAGE_TAG
+          # helm lint deploy/csi-rclone
+          helm package deploy/csi-rclone
+      - name: Helm registry login
+        run: |
+          helm registry login ${{ env.REGISTRY }} --username ${{ github.actor }} --password ${{ secrets.GITHUB_TOKEN }}
