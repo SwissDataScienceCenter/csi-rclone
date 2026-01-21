@@ -320,6 +320,8 @@ func getVolumeConfig(ctx context.Context, req *csi.NodeStageVolumeRequest) (*Mou
 }
 
 func (ns *NodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {
+	klog.Infof("NodeStageVolume called with: %v", *req)
+
 	if err := validateNodeStageVolumeRequest(req); err != nil {
 		return nil, err
 	}
@@ -371,6 +373,8 @@ func validateNodeUnstageVolumeRequest(req *csi.NodeUnstageVolumeRequest) error {
 }
 
 func (ns *NodeServer) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolumeRequest) (*csi.NodeUnstageVolumeResponse, error) {
+	klog.Infof("NodeUnstageVolume called with: %v", *req)
+
 	if err := validateNodeUnstageVolumeRequest(req); err != nil {
 		return nil, err
 	}
@@ -422,6 +426,8 @@ func validateNodePublishVolumeRequest(req *csi.NodePublishVolumeRequest) error {
 }
 
 func (ns *NodeServer) NodePublishVolume(_ context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
+	klog.Infof("NodePublishVolume called with: %v", *req)
+
 	if err := validateNodePublishVolumeRequest(req); err != nil {
 		return nil, err
 	}
@@ -594,7 +600,8 @@ func extractConfigData(parameters map[string]string) (string, map[string]string)
 
 // Unmounting Volumes
 func (ns *NodeServer) NodeUnpublishVolume(_ context.Context, req *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error) {
-	klog.Infof("NodeUnpublishVolume called with: %s", req)
+	klog.Infof("NodeUnpublishVolume called with: %v", *req)
+
 	if err := validateUnPublishVolumeRequest(req); err != nil {
 		return nil, err
 	}
