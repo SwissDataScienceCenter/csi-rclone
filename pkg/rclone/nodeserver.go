@@ -448,6 +448,11 @@ func (ns *NodeServer) NodePublishVolume(_ context.Context, req *csi.NodePublishV
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
+	// Mount a tmpfs which is going to serve as a fixed point to allow rebinding fuse whenever necessary
+	if err := ns.mounter.Mount("tmpfs", req.GetTargetPath(), "tmpfs", []string{"size=1M"}); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
 	options := []string{"bind"}
 	if req.GetReadonly() {
 		options = append(options, "remount", "ro")
@@ -606,14 +611,19 @@ func (ns *NodeServer) NodeUnpublishVolume(_ context.Context, req *csi.NodeUnpubl
 		return nil, err
 	}
 
-	if err := mount.CleanupMountPoint(req.GetTargetPath(), ns.mounter, true); err != nil {
-		if mounts, err := ns.mounter.GetMountRefs(req.GetTargetPath()); err == nil && len(mounts) == 0 {
-			return &csi.NodeUnpublishVolumeResponse{}, nil
+	for {
+		if err := ns.mounter.Unmount(req.GetTargetPath()); err != nil {
+			// keep unmounting whatever is on the folder until we can't
+			break
 		}
+	}
+
+	if err := os.Remove(req.GetTargetPath()); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	return &csi.NodeUnpublishVolumeResponse{}, nil
+
 }
 
 func validateUnPublishVolumeRequest(req *csi.NodeUnpublishVolumeRequest) error {
