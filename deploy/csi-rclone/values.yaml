@@ -1,8 +1,8 @@
 storageClassName: csi-rclone
 csiControllerRclone:
   podAnnotations:
-    prometheus.io/scrape: true
-    prometheus.io/port: 9090
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
   csiAttacher:
     image:
       repository: registry.k8s.io/sig-storage/csi-attacher
@@ -42,8 +42,8 @@ csiControllerRclone:
 
 csiNodepluginRclone:
   podAnnotations:
-    prometheus.io/scrape: true
-    prometheus.io/port: 9090
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
   nodeDriverRegistrar:
     image:
       repository: registry.k8s.io/sig-storage/csi-node-driver-registrar
