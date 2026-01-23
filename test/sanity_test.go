@@ -201,7 +201,7 @@ provider=AWS`}, // The type has to be set to something valid or rclone fails to 
 				},
 				Spec: v1.PersistentVolumeClaimSpec{
 					AccessModes: []v1.PersistentVolumeAccessMode{v1.ReadWriteOnce},
-					Resources: v1.ResourceRequirements{
+					Resources: v1.VolumeResourceRequirements{
 						Requests: v1.ResourceList{"storage": resource.MustParse("1Gi")},
 					},
 					StorageClassName: &className,
@@ -257,7 +257,7 @@ provider=AWS`},
 				},
 				Spec: v1.PersistentVolumeClaimSpec{
 					AccessModes: []v1.PersistentVolumeAccessMode{v1.ReadWriteOnce},
-					Resources: v1.ResourceRequirements{
+					Resources: v1.VolumeResourceRequirements{
 						Requests: v1.ResourceList{"storage": resource.MustParse("1Gi")},
 					},
 					StorageClassName: &className,
