@@ -5,7 +5,9 @@
     "containerUser": "root",
     "features": {
         "ghcr.io/devcontainers/features/git:1": {},
-        "ghcr.io/devcontainers/features/go:1": {},
+        "ghcr.io/devcontainers/features/go:1": {
+            "version": "latest"
+        },
         "ghcr.io/devcontainers-extra/features/apt-packages:1": {
             "packages": "fuse3"
         },
