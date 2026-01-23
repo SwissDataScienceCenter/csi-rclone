@@ -104,21 +104,21 @@ func (cs *ControllerServer) ValidateVolumeCapabilities(_ context.Context, req *c
 
 // ControllerPublishVolume Attaching Volume
 func (cs *ControllerServer) ControllerPublishVolume(_ context.Context, req *csi.ControllerPublishVolumeRequest) (*csi.ControllerPublishVolumeResponse, error) {
-	klog.Infof("ControllerPublishVolume called with: %v", *req)
+	klog.Infof("ControllerPublishVolume called with: %v", req)
 
 	return nil, status.Errorf(codes.Unimplemented, "method ControllerPublishVolume not implemented")
 }
 
 // ControllerUnpublishVolume Detaching Volume
 func (cs *ControllerServer) ControllerUnpublishVolume(_ context.Context, req *csi.ControllerUnpublishVolumeRequest) (*csi.ControllerUnpublishVolumeResponse, error) {
-	klog.Infof("ControllerUnpublishVolume called with: %v", *req)
+	klog.Infof("ControllerUnpublishVolume called with: %v", req)
 
 	return nil, status.Errorf(codes.Unimplemented, "method ControllerUnpublishVolume not implemented")
 }
 
 // CreateVolume Provisioning Volumes
 func (cs *ControllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
-	klog.Infof("CreateVolume called with: %v", *req)
+	klog.Infof("CreateVolume called with: %v", req)
 
 	volumeName := req.GetName()
 	if len(volumeName) == 0 {
@@ -177,7 +177,7 @@ func (cs *ControllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 }
 
 func (cs *ControllerServer) DeleteVolume(_ context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
-	klog.Infof("DeleteVolume called with: %v", *req)
+	klog.Infof("DeleteVolume called with: %v", req)
 
 	volId := req.GetVolumeId()
 	if len(volId) == 0 {
