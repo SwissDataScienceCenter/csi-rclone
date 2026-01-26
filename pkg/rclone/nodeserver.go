@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/kube"
@@ -394,7 +395,7 @@ func (ns *NodeServer) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstag
 		ns.removeTrackedVolume(req.GetVolumeId())
 
 		for {
-			if err := ns.mounter.Unmount(volume.TargetPath); err != nil {
+			if err := ns.mounter.Unmount(volume.TargetPath); err != nil && !(errors.Is(err, syscall.EAGAIN) || errors.Is(err, syscall.EBUSY)) {
 				// keep unmounting whatever is on the folder until we can't
 				break
 			}
@@ -625,7 +626,7 @@ func (ns *NodeServer) NodeUnpublishVolume(_ context.Context, req *csi.NodeUnpubl
 	}
 
 	for {
-		if err := ns.mounter.Unmount(req.GetTargetPath()); err != nil {
+		if err := ns.mounter.Unmount(req.GetTargetPath()); err != nil && !(errors.Is(err, syscall.EAGAIN) || errors.Is(err, syscall.EBUSY)) {
 			// keep unmounting whatever is on the folder until we can't
 			break
 		}
