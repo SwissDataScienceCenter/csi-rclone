@@ -341,6 +341,11 @@ func (ns *NodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVol
 		return nil, status.Error(codes.AlreadyExists, "Requested Volume capability incompatible with currently staged volume")
 	}
 
+	// Mount a tmpfs which is going to serve as a fixed point to allow rebinding fuse whenever necessary
+	if err := ns.mounter.Mount("tmpfs", req.GetStagingTargetPath(), "tmpfs", []string{"size=1M"}); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
 	volume, err := getVolumeConfig(ctx, req)
 	if err != nil {
 		return nil, err
@@ -393,6 +398,13 @@ func (ns *NodeServer) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstag
 
 		// Remove the volume from tracking
 		ns.removeTrackedVolume(req.GetVolumeId())
+
+		for {
+			if err := ns.mounter.Unmount(volume.TargetPath); err != nil {
+				// keep unmounting whatever is on the folder until we can't
+				break
+			}
+		}
 	} else {
 		return nil, status.Error(codes.NotFound, "volume not found")
 	}
@@ -455,10 +467,10 @@ func (ns *NodeServer) NodePublishVolume(_ context.Context, req *csi.NodePublishV
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	// Mount a tmpfs which is going to serve as a fixed point to allow rebinding fuse whenever necessary
-	if err := ns.mounter.Mount("tmpfs", req.GetTargetPath(), "tmpfs", []string{"size=1M"}); err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
+	//// Mount a tmpfs which is going to serve as a fixed point to allow rebinding fuse whenever necessary
+	//if err := ns.mounter.Mount("tmpfs", req.GetTargetPath(), "tmpfs", []string{"size=1M"}); err != nil {
+	//	return nil, status.Error(codes.Internal, err.Error())
+	//}
 
 	options := []string{"bind"}
 	if req.GetReadonly() {
@@ -630,7 +642,6 @@ func (ns *NodeServer) NodeUnpublishVolume(_ context.Context, req *csi.NodeUnpubl
 	}
 
 	return &csi.NodeUnpublishVolumeResponse{}, nil
-
 }
 
 func validateUnPublishVolumeRequest(req *csi.NodeUnpublishVolumeRequest) error {
