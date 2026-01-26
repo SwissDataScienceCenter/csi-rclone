@@ -22,6 +22,7 @@ import (
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/metrics"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/fernet/fernet-go"
+	csicommon "github.com/kubernetes-csi/drivers/pkg/csi-common"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/cobra"
 	"golang.org/x/net/context"
@@ -33,15 +34,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog"
 	mountutils "k8s.io/mount-utils"
-	"k8s.io/utils/exec"
-	"k8s.io/utils/mount"
-
-	csicommon "github.com/kubernetes-csi/drivers/pkg/csi-common"
 )
 
 type NodeServer struct {
 	*csicommon.DefaultNodeServer
-	mounter   *mount.SafeFormatAndMount
+	mounter   mountutils.Interface
 	RcloneOps Operations
 
 	// Track mounted volumes for automatic remounting
@@ -105,14 +102,11 @@ func NewNodeServer(csiDriver *csicommon.CSIDriver, cacheDir string, cacheSize st
 
 	ns := &NodeServer{
 		DefaultNodeServer: csicommon.NewDefaultNodeServer(csiDriver),
-		mounter: &mount.SafeFormatAndMount{
-			Interface: mount.New(""),
-			Exec:      exec.New(),
-		},
-		RcloneOps:      NewRclone(kubeClient, rclonePort, cacheDir, cacheSize),
-		mountedVolumes: make(map[string]MountedVolume),
-		mutex:          &sync.Mutex{},
-		stateFile:      "/run/csi-rclone/mounted_volumes.json",
+		mounter:           &mountutils.Mounter{},
+		RcloneOps:         NewRclone(kubeClient, rclonePort, cacheDir, cacheSize),
+		mountedVolumes:    make(map[string]MountedVolume),
+		mutex:             &sync.Mutex{},
+		stateFile:         "/run/csi-rclone/mounted_volumes.json",
 	}
 
 	// Ensure the folder exists
