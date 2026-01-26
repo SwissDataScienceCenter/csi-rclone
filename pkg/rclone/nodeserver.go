@@ -7,6 +7,7 @@ package rclone
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,7 +26,6 @@ import (
 	csicommon "github.com/kubernetes-csi/drivers/pkg/csi-common"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/cobra"
-	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"gopkg.in/ini.v1"
