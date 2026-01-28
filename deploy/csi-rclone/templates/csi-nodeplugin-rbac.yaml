@@ -7,7 +7,9 @@ metadata:
   {{- include "chart.labels" . | nindent 4 }}
   annotations:
     {{- toYaml .Values.csiNodepluginRclone.serviceAccount.annotations | nindent 4 }}
+
 ---
+{{- if .Values.rbac.create -}}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -99,3 +101,4 @@ subjects:
 - kind: ServiceAccount
   name: '{{ include "chart.fullname" . }}-nodeplugin'
   namespace: '{{ .Release.Namespace }}'
+{{- end -}}

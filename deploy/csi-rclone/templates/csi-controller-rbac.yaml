@@ -8,6 +8,8 @@ metadata:
   annotations:
     {{- toYaml .Values.csiControllerRclone.serviceAccount.annotations | nindent 4 }}
 ---
+
+{{- if .Values.rbac.create -}}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -216,7 +218,6 @@ roleRef:
   kind: ClusterRole
   name: '{{ include "chart.fullname" . }}-external-provisioner-runner'
   apiGroup: rbac.authorization.k8s.io
-
 ---
 # Provisioner must be able to work with endpoints in current namespace
 # if (and only if) leadership election is enabled
@@ -289,3 +290,4 @@ roleRef:
   kind: Role
   name: {{ include "chart.fullname" . }}-external-provisioner-cfg
   apiGroup: rbac.authorization.k8s.io
+{{- end -}}
