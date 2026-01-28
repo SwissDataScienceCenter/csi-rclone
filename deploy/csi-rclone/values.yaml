@@ -1,4 +1,10 @@
 storageClassName: csi-rclone
+rbac:
+  create: true
+driver:
+  create: true
+storageClass:
+  create: true
 csiControllerRclone:
   podAnnotations:
     prometheus.io/scrape: "true"
