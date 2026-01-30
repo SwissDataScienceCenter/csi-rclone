@@ -24,7 +24,7 @@ spec:
       - name: node-driver-registrar
         args:
         - --v=5
-        - --csi-address=/plugin/csi.sock
+        - --csi-address=/csi/csi.sock
         - --kubelet-registration-path=/var/lib/kubelet/plugins/{{ .Values.storageClassName }}/csi.sock
         env:
         - name: KUBE_NODE_NAME
@@ -47,7 +47,7 @@ spec:
         resources:
           {{- toYaml .Values.csiNodepluginRclone.rclone.resources | nindent 12 }}
         volumeMounts:
-        - mountPath: /plugin
+        - mountPath: /csi
           name: plugin-dir
         - mountPath: /registration
           name: registration-dir
@@ -55,9 +55,9 @@ spec:
         imagePullPolicy: Always
         image: registry.k8s.io/sig-storage/livenessprobe:v2.15.0
         args:
-        - --csi-address=/plugin/csi.sock
+        - --csi-address=/csi/csi.sock
         volumeMounts:
-        - mountPath: /plugin
+        - mountPath: /csi
           name: plugin-dir
       - name: rclone
         args:
@@ -88,7 +88,7 @@ spec:
             fieldRef:
               fieldPath: spec.nodeName
         - name: CSI_ENDPOINT
-          value: "unix://plugin/csi.sock"
+          value: "unix://csi/csi.sock"
         - name: KUBERNETES_CLUSTER_DOMAIN
           value: {{ quote .Values.kubernetesClusterDomain }}
         - name: DRIVER_NAME
@@ -136,8 +136,10 @@ spec:
           timeoutSeconds: 10
           periodSeconds: 30
         volumeMounts:
-        - mountPath: /plugin
+        - mountPath: /csi
           name: plugin-dir
+        - mountPath: /run/csi-rclone
+          name: node-temp-dir
         - mountPath: /var/lib/kubelet/pods
           mountPropagation: Bidirectional
           name: pods-mount-dir
@@ -157,6 +159,11 @@ spec:
     {{- end }}
       volumes:
       - hostPath:
+          # NOTE: We mount on /tmp because we want the saved configuration to not survive a whole node restart.
+          path: /tmp/{{.Release.Namespace}}-{{.Release.Name}}-{{.Release.Revision}}
+          type: DirectoryOrCreate
+        name: node-temp-dir
+      - hostPath:
           path: {{ .Values.kubeletDir }}/plugins/{{ .Values.storageClassName }}
           type: DirectoryOrCreate
         name: plugin-dir
@@ -169,4 +176,4 @@ spec:
           type: DirectoryOrCreate
         name: registration-dir
       - name: cache-dir
-        emptyDir:
+        emptyDir: {}
