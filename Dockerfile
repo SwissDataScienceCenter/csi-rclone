@@ -2,7 +2,7 @@ ARG RCLONE_IMAGE_REPOSITORY="ghcr.io/swissdatasciencecenter/rclone"
 ARG RCLONE_IMAGE_TAG="sha-308067c"
 FROM ${RCLONE_IMAGE_REPOSITORY}:${RCLONE_IMAGE_TAG} AS rclone
 
-FROM golang:1.23.8-bookworm AS build
+FROM golang:1.25.6-bookworm AS build
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
   go mod download
