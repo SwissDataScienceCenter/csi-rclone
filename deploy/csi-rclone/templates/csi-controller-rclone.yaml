@@ -119,8 +119,8 @@ spec:
         - mountPath: /plugin
           name: socket-dir
       - name: liveness-probe
-        imagePullPolicy: Always
-        image: registry.k8s.io/sig-storage/livenessprobe:v2.15.0
+        imagePullPolicy: {{ .Values.csiControllerRclone.livenessProbe.imagePullPolicy }}
+        image: {{ .Values.csiControllerRclone.livenessProbe.image.repository }}:{{ .Values.csiControllerRclone.livenessProbe.image.tag }}
         args:
         - --csi-address=/csi/csi.sock
         volumeMounts:

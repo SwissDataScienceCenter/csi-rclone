@@ -52,8 +52,8 @@ spec:
         - mountPath: /registration
           name: registration-dir
       - name: liveness-probe
-        imagePullPolicy: Always
-        image: registry.k8s.io/sig-storage/livenessprobe:v2.15.0
+        imagePullPolicy: {{ .Values.csiNodepluginRclone.livenessProbe.imagePullPolicy }}
+        image: {{ .Values.csiNodepluginRclone.livenessProbe.image.repository }}:{{ .Values.csiNodepluginRclone.livenessProbe.image.tag }}
         args:
         - --csi-address=/plugin/csi.sock
         volumeMounts:
@@ -169,4 +169,4 @@ spec:
           type: DirectoryOrCreate
         name: registration-dir
       - name: cache-dir
-        emptyDir:
+        emptyDir: {}
