@@ -1,3 +1,4 @@
+{{- if .Values.storageClass.create -}}
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
@@ -26,3 +27,4 @@ parameters:
   # If creating a PersistentVolume by hand then set spec.csi.nodePublishSecretRef.name and spec.csi.NodePublishSecretRef.namespace
   csi.storage.k8s.io/node-publish-secret-name: ${pvc.annotations['csi-rclone.dev/secretName']}
   csi.storage.k8s.io/node-publish-secret-namespace: ${pvc.namespace}
+{{- end -}}
