@@ -67,10 +67,6 @@ csiNodepluginRclone:
     imagePullPolicy: Always
   rclone:
     containerSecurityContext:
-      allowPrivilegeEscalation: true
-      capabilities:
-        add:
-          - SYS_ADMIN
       privileged: true
     # Extra environment variables for the rclone container
     extraEnv: []
