@@ -17,7 +17,7 @@
         "ghcr.io/devcontainers-extra/features/kind:1": {},
         "./rclone": {
             "rclone_repository": "https://github.com/SwissDataScienceCenter/rclone.git",
-            "rclone_ref": "v1.69.3+renku-1"
+            "rclone_ref": "v1.71.2+renku-1"
         }
     },
     "overrideFeatureInstallOrder": [

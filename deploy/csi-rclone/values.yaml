@@ -1,5 +1,14 @@
 storageClassName: csi-rclone
+rbac:
+  create: true
+driver:
+  create: true
+storageClass:
+  create: true
 csiControllerRclone:
+  podAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
   csiAttacher:
     image:
       repository: registry.k8s.io/sig-storage/csi-attacher
@@ -10,10 +19,15 @@ csiControllerRclone:
       repository: registry.k8s.io/sig-storage/csi-provisioner
       tag: v5.1.0
     imagePullPolicy: IfNotPresent
+  livenessProbe:
+    image:
+      repository: registry.k8s.io/sig-storage/livenessprobe
+      tag: v2.15.0
+    imagePullPolicy: Always
   rclone:
     image:
       repository: csi-rclone
-      tag: "latest"
+      tag: latest
     imagePullPolicy: IfNotPresent
     resources:
       {}
@@ -23,23 +37,41 @@ csiControllerRclone:
       # requests:
       #   cpu: 100m
       #   memory: 128M
+    # If set, used to set GOMEMLIMIT, it should be strictly lower than
+    # limits.memory to prevent OOMkills
+    goMemLimit: # 115Mi
+    # Prometheus metrics
+    metrics:
+      enabled: true
+      host: # localhost
+      port: 9090
+      pathPrefix: # /metrics
+      pollPeriod: # 30s
   replicas: 1
   serviceAccount:
     annotations: {}
 
 csiNodepluginRclone:
+  podAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
   nodeDriverRegistrar:
     image:
       repository: registry.k8s.io/sig-storage/csi-node-driver-registrar
       tag: v2.13.0
     imagePullPolicy: IfNotPresent
+  livenessProbe:
+    image:
+      repository: registry.k8s.io/sig-storage/livenessprobe
+      tag: v2.15.0
+    imagePullPolicy: Always
   rclone:
     containerSecurityContext:
-      allowPrivilegeEscalation: true
-      capabilities:
-        add:
-          - SYS_ADMIN
       privileged: true
+    # Extra environment variables for the rclone container
+    extraEnv: []
+    # - name: "DEBUG"
+    #   value: "true"
     image:
       repository: csi-rclone
       tag: "latest"
@@ -51,13 +83,29 @@ csiNodepluginRclone:
       #   memory: 128Mi
       # requests:
       #   cpu: 100m
-      #   memory: 128M
+      #   memory: 128Mi
+    # If set, used to set GOMEMLIMIT, it should be strictly lower than
+    # limits.memory to prevent OOMkills
+    goMemLimit: # 115Mi
+    # Prometheus metrics
+    metrics:
+      enabled: true
+      host: # localhost
+      port: 9090
+      pathPrefix: # /metrics
+      pollPeriod: # 30s
     # Options to configure rclone's caching with VFS
     cache:
       # The location of the cache directory
       dir: /var/lib/rclone/cache
       # The size allocated for the cache directory
       size: 1G
+    # Extra arguments to pass to rclone daemon
+    extraArgs: []
+    # - name: "buffer-size"
+    #   value: "32M"
+    # - name: "transfers"
+    #   value: "8"
   serviceAccount:
     annotations: {}
   nodeSelector: {}

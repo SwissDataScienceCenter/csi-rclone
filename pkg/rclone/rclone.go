@@ -76,6 +76,7 @@ type VfsOpt struct {
 	FilePerms          os.FileMode `json:",omitempty"`
 	ChunkSize          string      `json:",omitempty"` // if > 0 read files in chunks
 	ChunkSizeLimit     string      `json:",omitempty"` // if > ChunkSize double the chunk size after each chunk until reached
+	ChunkStreams       int         `json:",omitempty"`
 	CacheMode          string      `json:",omitempty"`
 	CacheMaxAge        string      `json:",omitempty"`
 	CacheMaxSize       string      `json:",omitempty"`
@@ -422,6 +423,22 @@ func (r *Rclone) start_daemon() error {
 	rclone_args = append(rclone_args, "--rc-no-auth")
 	if r.cacheDir != "" {
 		rclone_args = append(rclone_args, fmt.Sprintf("--cache-dir=%s", r.cacheDir))
+	}
+	// Add any extra arguments from environment variable
+	extraArgs := os.Getenv("EXTRA_ARGS")
+	if extraArgs != "" {
+		var argList []map[string]string
+		if err := json.Unmarshal([]byte(extraArgs), &argList); err == nil {
+			for _, arg := range argList {
+				if name, exists := arg["name"]; exists && name != "" {
+					if value, hasValue := arg["value"]; hasValue && value != "" {
+						rclone_args = append(rclone_args, fmt.Sprintf("--%s=%s", name, value))
+					} else {
+						rclone_args = append(rclone_args, fmt.Sprintf("--%s", name))
+					}
+				}
+			}
+		}
 	}
 	loglevel := os.Getenv("LOG_LEVEL")
 	if len(loglevel) == 0 {
