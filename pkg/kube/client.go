@@ -1,6 +1,8 @@
 package kube
 
 import (
+	"errors"
+
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -31,7 +33,7 @@ func loadKubeConfig() (*rest.Config, error) {
 		return config, nil
 	}
 
-	if err != rest.ErrNotInCluster {
+	if !errors.Is(err, rest.ErrNotInCluster) {
 		return nil, err
 	}
 
