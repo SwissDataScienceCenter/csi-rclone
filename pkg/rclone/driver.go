@@ -130,6 +130,22 @@ func (d *Driver) WithControllerServer(cs *controllerServer) *Driver {
 }
 
 func (d *Driver) Run() error {
+	init := func() {
+		// Path inside your container image
+		src := "/usr/local/bin/rclone"
+		// Path on the host (accessed via a volume mount)
+		dst := "/host/opt/rclone-csi/bin/rclone"
+
+		// Create directory if it doesn't exist
+		os.MkdirAll("/host/opt/rclone-csi/bin", 0755)
+
+		// Copy the binary from the image to the host path
+		// This ensures the host can "see" the rclone binary
+		// even if the pod is currently restarting.
+		data, _ := os.ReadFile(src)
+		os.WriteFile(dst, data, 0755)
+	}
+	init()
 	s := csicommon.NewNonBlockingGRPCServer()
 	s.Start(
 		d.endpoint,
