@@ -132,7 +132,7 @@ func (d *Driver) WithControllerServer(cs *controllerServer) *Driver {
 func (d *Driver) Run() error {
 	init := func() {
 		// Path inside your container image
-		src := "/usr/local/bin/rclone"
+		src := "/usr/bin/rclone"
 		// Path on the host (accessed via a volume mount)
 		dst := "/host/opt/rclone-csi/bin/rclone"
 
