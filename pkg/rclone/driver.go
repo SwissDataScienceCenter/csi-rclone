@@ -134,10 +134,10 @@ func (d *Driver) Run() error {
 		// Path inside your container image
 		src := "/usr/bin/rclone"
 		// Path on the host (accessed via a volume mount)
-		dst := "/host/opt/rclone-csi/bin/rclone"
+		dst := "/opt/rclone-csi/bin/rclone"
 
 		// Create directory if it doesn't exist
-		os.MkdirAll("/host/opt/rclone-csi/bin", 0755)
+		os.MkdirAll("/opt/rclone-csi/bin", 0755)
 
 		// Copy the binary from the image to the host path
 		// This ensures the host can "see" the rclone binary

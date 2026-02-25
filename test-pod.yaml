@@ -3,19 +3,19 @@ kind: PersistentVolumeClaim
 metadata:
   name: csi-rclone-example
   annotations:
-    csi-rclone.dev/secretName: csi-rclone-example-secret
+    csi-rclone.dev/secretName: csi-rclone-test
 spec:
   accessModes:
     - ReadWriteMany
   resources:
     requests:
       storage: 10Gi
-  storageClassName: tasko-csi-rclone
+  storageClassName: tasko-csi-rclone-secret-annotation
 ---
 apiVersion: v1
 kind: Secret
 metadata:
-  name: csi-rclone-example-secret
+  name: csi-rclone-test
 type: Opaque
 stringData:
   remote: giab

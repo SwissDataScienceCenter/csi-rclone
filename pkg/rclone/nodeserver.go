@@ -128,6 +128,7 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 		return nil, err
 	} else if apierrors.IsNotFound(err) {
 		klog.Warningf("Cannot find saved secrets %s: %s", savedSecretName, err)
+		savedPvcSecret = nil
 	}
 
 	remote, remotePath, configData, flags, e := extractFlags(req.GetVolumeContext(), req.GetSecrets(), pvcSecret, savedPvcSecret)
@@ -179,7 +180,7 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 	args := []string{
 		"--mount=/host/proc/1/ns/mnt",
 		"--",
-		"/host/usr/bin/systemd-run",
+		"systemd-run",
 		"--scope",
 	}
 
@@ -196,8 +197,12 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 	)
 
 	cmd := exec.Command("/host/usr/bin/nsenter", args...)
+	cmd.Stderr = os.Stdout
+	cmd.Stdout = os.Stdout
+	klog.Infof("Args: %+v", args)
 	err = cmd.Run()
 	if err != nil {
+		klog.Errorf("Failed to mount with error: %v", err)
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
