@@ -36,6 +36,8 @@ spec:
       volumeMounts:
         - mountPath: "/giab"
           name: task-pv-storage
+      command: ["sleep"]
+      args: ["9999999"]
   volumes:
     - name: task-pv-storage
       persistentVolumeClaim:

@@ -19,6 +19,8 @@ spec:
       {{- toYaml .Values.csiNodepluginRclone.podAnnotations | nindent 8 }}
     spec:
       serviceAccountName: {{ include "chart.fullname" . }}-nodeplugin
+      hostPID: true
+      hostIPC: true
       dnsPolicy: ClusterFirstWithHostNet
       containers:
       - name: node-driver-registrar
