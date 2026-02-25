@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -48,6 +49,43 @@ func (ns *nodeServer) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstag
 	return nil, status.Errorf(codes.Unimplemented, "method NodeUnstageVolume not implemented")
 }
 
+func configToEnvMap(configData string) (map[string]string, error) {
+	envVars := make(map[string]string)
+
+	// Parse the string data
+	cfg, err := ini.Load([]byte(configData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse config: %w", err)
+	}
+
+	for _, section := range cfg.Sections() {
+		remoteName := section.Name()
+
+		// Skip the internal INI "DEFAULT" section
+		// I.e. the section without a heading that is not in any heading
+		// NOTE: This will clash with any section i.e. remote that is named "[DEFAULT]"
+		if remoteName == "DEFAULT" {
+			continue
+		}
+
+		// rclone convention: RCLONE_CONFIG_REMOTENAME_KEYNAME
+		// 1. Replace hyphens/spaces with underscores
+		// 2. Convert to uppercase
+		envRemote := strings.ToUpper(strings.ReplaceAll(remoteName, "-", "_"))
+		envRemote = strings.ReplaceAll(envRemote, " ", "_")
+
+		for _, key := range section.Keys() {
+			envKey := strings.ToUpper(strings.ReplaceAll(key.Name(), "-", "_"))
+			envKey = strings.ReplaceAll(envKey, " ", "_")
+
+			fullKey := fmt.Sprintf("RCLONE_CONFIG_%s_%s", envRemote, envKey)
+			envVars[fullKey] = key.String()
+		}
+	}
+
+	return envVars, nil
+}
+
 // Mounting Volume (Actual Mounting)
 func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
 	if err := validatePublishVolumeRequest(req); err != nil {
@@ -55,9 +93,9 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 	}
 
 	targetPath := req.GetTargetPath()
-	volumeId := req.GetVolumeId()
+	//volumeId := req.GetVolumeId()
 	volumeContext := req.GetVolumeContext()
-	readOnly := req.GetReadonly()
+	//readOnly := req.GetReadonly()
 	secretName, foundSecret := volumeContext["secretName"]
 	secretNamespace, foundSecretNamespace := volumeContext["secretNamespace"]
 	// For backwards compatibility - prior to the change in #20 this field held the namespace
@@ -90,6 +128,7 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 		return nil, err
 	} else if apierrors.IsNotFound(err) {
 		klog.Warningf("Cannot find saved secrets %s: %s", savedSecretName, err)
+		savedPvcSecret = nil
 	}
 
 	remote, remotePath, configData, flags, e := extractFlags(req.GetVolumeContext(), req.GetSecrets(), pvcSecret, savedPvcSecret)
@@ -126,25 +165,47 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 		}
 	}
 
-	rcloneVol := &RcloneVolume{
-		ID:         volumeId,
-		Remote:     remote,
-		RemotePath: remotePath,
-	}
-	err = ns.RcloneOps.Mount(ctx, rcloneVol, targetPath, configData, readOnly, flags)
-	if err != nil {
-		if os.IsPermission(err) {
-			return nil, status.Error(codes.PermissionDenied, err.Error())
-		}
-		if strings.Contains(err.Error(), "invalid argument") {
-			return nil, status.Error(codes.InvalidArgument, err.Error())
-		}
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-	// err = ns.WaitForMountAvailable(targetPath)
-	// if err != nil {
-	// 	return nil, status.Error(codes.Internal, err.Error())
+	// rcloneVol := &RcloneVolume{
+	// 	ID:         volumeId,
+	// 	Remote:     remote,
+	// 	RemotePath: remotePath,
 	// }
+
+	envVars, err := configToEnvMap(configData)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	// 2. Build the systemd-run command with --setenv
+	args := []string{
+		"--mount=/host/proc/1/ns/mnt",
+		"--",
+		"systemd-run",
+		"--scope",
+	}
+
+	// Inject rclon config as env vars
+	for k, v := range envVars {
+		args = append(args, fmt.Sprintf("--setenv=%s=%s", k, v))
+	}
+
+	args = append(args,
+		"/opt/rclone-csi/bin/rclone", "mount",
+		remote+":"+remotePath, req.GetTargetPath(),
+		"--daemon",
+		"--allow-other",
+	)
+
+	cmd := exec.Command("/host/usr/bin/nsenter", args...)
+	cmd.Stderr = os.Stdout
+	cmd.Stdout = os.Stdout
+	klog.Infof("Args: %+v", args)
+	err = cmd.Run()
+	if err != nil {
+		klog.Errorf("Failed to mount with error: %v", err)
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
 	return &csi.NodePublishVolumeResponse{}, nil
 }
 

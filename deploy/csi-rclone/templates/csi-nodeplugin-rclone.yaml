@@ -19,6 +19,8 @@ spec:
       {{- toYaml .Values.csiNodepluginRclone.podAnnotations | nindent 8 }}
     spec:
       serviceAccountName: {{ include "chart.fullname" . }}-nodeplugin
+      hostPID: true
+      hostIPC: true
       dnsPolicy: ClusterFirstWithHostNet
       containers:
       - name: node-driver-registrar
@@ -143,6 +145,20 @@ spec:
           name: pods-mount-dir
         - mountPath: /var/lib/rclone
           name: cache-dir
+        # Host Proc for nsenter
+        - name: host-proc
+          mountPath: /host/proc
+          readOnly: true
+        # Host Binaries for systemd-run and nsenter
+        - name: host-usr-bin
+          mountPath: /host/usr/bin
+          readOnly: true
+        # FUSE Device
+        - name: dev-fuse
+          mountPath: /dev/fuse
+        # The Binary Bridge for rclone
+        - name: bin-bridge
+          mountPath: /opt/rclone-csi/bin
     {{- with .Values.csiNodepluginRclone.nodeSelector }}
       nodeSelector:
         {{ toYaml . | nindent 8 }}
@@ -170,3 +186,19 @@ spec:
         name: registration-dir
       - name: cache-dir
         emptyDir: {}
+      - name: host-proc
+        hostPath:
+          path: /proc
+          type: Directory
+      - name: host-usr-bin
+        hostPath:
+          path: /usr/bin
+          type: Directory
+      - name: dev-fuse
+        hostPath:
+          path: /dev/fuse
+          type: CharDevice
+      - name: bin-bridge
+        hostPath:
+          path: /opt/rclone-csi/bin
+          type: DirectoryOrCreate
