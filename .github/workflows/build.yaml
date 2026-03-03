@@ -27,7 +27,7 @@ jobs:
       image: ${{ steps.docker_image.outputs.image }}
       image_repository: ${{ steps.docker_image.outputs.image_repository }}
       image_tag: ${{ steps.docker_image.outputs.image_tag }}
-      image_prefix: $${{ steps.docker_image.outputs.image_prefix }}
+      image_prefix: ${{ steps.docker_image.outputs.image_prefix }}
     permissions:
       contents: read
       packages: write
