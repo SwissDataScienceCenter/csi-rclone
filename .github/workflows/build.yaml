@@ -7,6 +7,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  CHART_REPO: helm-charts-dev
 
 defaults:
   run:
@@ -26,6 +27,7 @@ jobs:
       image: ${{ steps.docker_image.outputs.image }}
       image_repository: ${{ steps.docker_image.outputs.image_repository }}
       image_tag: ${{ steps.docker_image.outputs.image_tag }}
+      image_registry: $${{ steps.docker_image.outputs.image_registry }}
     permissions:
       contents: read
       packages: write
@@ -59,13 +61,16 @@ jobs:
         run: |
           IMAGE=$(echo '${{ steps.meta.outputs.json }}' | jq -cr '.tags[0]')
           echo "IMAGE=${IMAGE}"
-          IMAGE_REPOSITORY=$(echo "$IMAGE" | cut -d":" -f1)
+          IMAGE_REPOSITORY=$(echo "$IMAGE" | cut -d':' -f1)
           echo "IMAGE_REPOSITORY=${IMAGE_REPOSITORY}"
-          IMAGE_TAG=$(echo "$IMAGE" | cut -d":" -f2)
+          IMAGE_TAG=$(echo "$IMAGE" | cut -d':' -f2)
           echo "IMAGE_TAG=${IMAGE_TAG}"
+          IMAGE_REGISTRY=$(echo "${IMAGE_REPOSITORY}" | rev | cut -d'/' -f2- | rev)
+          echo "IMAGE_REGISTRY=${IMAGE_REGISTRY}"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
           echo "image_repository=$IMAGE_REPOSITORY" >> "$GITHUB_OUTPUT"
           echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+          echo "image_registry=$IMAGE_REGISTRY" >> "$GITHUB_OUTPUT"
       - name: Set up Docker buildx
         uses: docker/setup-buildx-action@v3
       - name: Set up Docker
@@ -109,9 +114,9 @@ jobs:
       - name: Update chart
         run: |
           helm dep update deploy/csi-rclone
-          chartpress --no-build --image-prefix "${{ env.REGISTRY }}/" --tag "${{ needs.build-image.outputs.image_tag }}"
+          chartpress --no-build --image-prefix "${{ needs.build-image.outputs.image_registry }}/" --tag "${{ needs.build-image.outputs.image_tag }}"
           helm lint deploy/csi-rclone
       - name: Publish chart
         run: |
           helm package deploy/csi-rclone
-          helm push "csi-rclone-${{ needs.build-image.outputs.image_tag }}.tgz" "oci://${{ needs.build-image.outputs.image_repository }}/helm-charts-dev"
+          helm push "csi-rclone-${{ needs.build-image.outputs.image_tag }}.tgz" "oci://${{ needs.build-image.outputs.image_repository }}/${{ env.CHART_REPO }}"
