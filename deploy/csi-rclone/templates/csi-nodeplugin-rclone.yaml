@@ -21,7 +21,7 @@ spec:
       serviceAccountName: {{ include "chart.fullname" . }}-nodeplugin
       dnsPolicy: ClusterFirstWithHostNet
       initContainers:
-        {{- include "certificates.initContainer" . | nindent 8 }}
+        {{- include "csiRcloneCertificates.initContainer" . | nindent 8 }}
       containers:
       - name: node-driver-registrar
         args:
@@ -145,7 +145,7 @@ spec:
           name: pods-mount-dir
         - mountPath: /var/lib/rclone
           name: cache-dir
-        {{- include "certificates.volumeMounts.system" . | nindent 8 }}
+        {{- include "csiRcloneCertificates.volumeMounts.system" . | nindent 8 }}
     {{- with .Values.csiNodepluginRclone.nodeSelector }}
       nodeSelector:
         {{ toYaml . | nindent 8 }}
@@ -173,4 +173,4 @@ spec:
         name: registration-dir
       - name: cache-dir
         emptyDir: {}
-      {{- include "certificatesForMounts.volumes" . | nindent 6 }}
+      {{- include "csiRcloneCertificatesForMounts.volumes" . | nindent 6 }}

@@ -1,4 +1,4 @@
-{{- define "certificatesForMounts.volumes" -}}
+{{- define "csiRcloneCertificatesForMounts.volumes" -}}
 {{- $customCAsEnabled := .Values.csiNodepluginRclone.certificates.customCAs -}}
 {{- $customCAsForMountsEnabled := .Values.csiNodepluginRclone.certificates.customCAsForDataConnectorMounts -}}
 - name: etc-ssl-certs
