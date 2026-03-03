@@ -21,7 +21,7 @@ spec:
       serviceAccountName: {{ include "chart.fullname" . }}-nodeplugin
       dnsPolicy: ClusterFirstWithHostNet
       initContainers:
-        {{- include "csiRcloneCertificates.initContainer" . | nindent 8 }}
+      {{- include "csiRcloneCertificates.initContainer" . | nindent 6 }}
       containers:
       - name: node-driver-registrar
         args:

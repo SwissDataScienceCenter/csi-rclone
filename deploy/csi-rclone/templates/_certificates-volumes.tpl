@@ -4,7 +4,7 @@
 - name: etc-ssl-certs
   emptyDir:
     medium: "Memory"
-{{- if or $customCAsEnabled $customCAsForMountsEnabled -}}
+{{- if or $customCAsEnabled $customCAsForMountsEnabled }}
 - name: custom-ca-certs
   projected:
     defaultMode: 0444
