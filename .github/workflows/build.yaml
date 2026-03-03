@@ -111,4 +111,4 @@ jobs:
       - name: Publish chart
         run: |
           helm package deploy/csi-rclone
-          helm push "csi-rclone-${{ needs.build-image.outputs.image_tag }}.tgz" "oci://${{ needs.build-image.outputs.image_repository }}/helm-chart-dev"
+          helm push "csi-rclone-${{ needs.build-image.outputs.image_tag }}.tgz" "oci://${{ needs.build-image.outputs.image_repository }}/helm-charts-dev"
