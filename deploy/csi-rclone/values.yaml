@@ -47,7 +47,6 @@ csiControllerRclone:
       port: 9090
       pathPrefix: # /metrics
       pollPeriod: # 30s
-  
   replicas: 1
   serviceAccount:
     annotations: {}
