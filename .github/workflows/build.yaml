@@ -33,12 +33,28 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+      - name: Install chartpress
+        run: pip install chartpress
+      - name: Get image tag from chartpress
+        id: chartpress
+        run: |
+          CHARTPRESS_TAG=$(chartpress --list-images | head -n1 | cut -d":" -f2)
+          echo "CHARTPRESS_TAG=${CHARTPRESS_TAG}"
+          echo "chartpress_tag=${CHARTPRESS_TAG}" >> "$GITHUB_OUTPUT"
       - name: Docker image metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: type=sha
+          tags: |
+            type=raw,value=${{ steps.chartpress.outputs.chartpress_tag }}
+            type=sha
       - name: Extract Docker image name
         id: docker_image
         run: |
@@ -79,11 +95,10 @@ jobs:
         with:
           python-version: 3.11
       - name: Setup Helm
-        uses: azure/setup-helm@v3
-        with:
-          token: ${{secrets.GITHUB_TOKEN }}
+        uses: azure/setup-helm@v4
       - name: Install chartpress
         run: pip install chartpress
       - name: Setup Helm push
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+      
