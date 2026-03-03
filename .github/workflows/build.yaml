@@ -7,7 +7,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  CHART_NAME: ${{ github.repository }}/helm-chart
+  CHART_NAME: ${{ github.repository }}/helm-chart-dev
 
 defaults:
   run:
@@ -67,23 +67,23 @@ jobs:
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
           echo "image_repository=$IMAGE_REPOSITORY" >> "$GITHUB_OUTPUT"
           echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
-      # - name: Set up Docker buildx
-      #   uses: docker/setup-buildx-action@v3
-      # - name: Set up Docker
-      #   uses: docker/login-action@v3
-      #   with:
-      #     registry: ${{ env.REGISTRY }}
-      #     username: ${{ github.actor }}
-      #     password: ${{ secrets.GITHUB_TOKEN }}
-      # - name: Build and push Docker image
-      #   uses: docker/build-push-action@v6
-      #   with:
-      #     context: .
-      #     push: true
-      #     tags: ${{ steps.meta.outputs.tags }}
-      #     labels: ${{ steps.meta.outputs.labels }}
-      #     cache-from: type=registry,ref=${{ steps.docker_image.outputs.image_repository }}:buildcache
-      #     cache-to: type=registry,ref=${{ steps.docker_image.outputs.image_repository }}:buildcache,mode=max
+      - name: Set up Docker buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Set up Docker
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ steps.docker_image.outputs.image_repository }}:buildcache
+          cache-to: type=registry,ref=${{ steps.docker_image.outputs.image_repository }}:buildcache,mode=max
 
   publish-chart:
     needs: [build-image]
@@ -107,22 +107,9 @@ jobs:
       - name: Update chart
         run: |
           helm dep update deploy/csi-rclone
-          chartpress --no-build --image-prefix "${{ needs.build-image.outputs.image_repository }}/" --tag "${{ needs.build-image.outputs.image_tag }}"
+          chartpress --no-build --image-prefix "${{ env.REGISTRY }}/" --tag "${{ needs.build-image.outputs.image_tag }}"
           helm lint deploy/csi-rclone
-      # - name: Publish chart
-      
-      # - name: Publish chart
-      #   env:
-      #     DOCKER_USERNAME: ${{ secrets.RENKU_DOCKER_USERNAME }}
-      #     DOCKER_PASSWORD: ${{ secrets.RENKU_DOCKER_PASSWORD }}
-      #     GITHUB_TOKEN: ${{ secrets.RENKUBOT_GITHUB_TOKEN }}
-      #   run: |
-      #     git config --global user.email "renku@datascience.ch"
-      #     git config --global user.name "Renku Bot"
-      #     export TAG=$(echo ${GITHUB_REF} |cut -d/ -f3)
-      #     docker buildx create --name multiarch --use
-      #     docker buildx inspect --bootstrap
-      #     helm dep update deploy/csi-rclone
-      #     chartpress --tag $TAG --platform linux/amd64 --platform linux/arm64 --builder docker-buildx
-      #     helm lint deploy/csi-rclone
-      #     chartpress --tag $TAG --platform linux/amd64 --platform linux/arm64 --builder docker-buildx --push --publish-chart 
+      - name: Publish chart
+        run: |
+          helm package deploy/csi-rclone
+          helm push "csi-rclone-${{ needs.build-image.outputs.image_tag }}.tgz" "oci://${{ env.REGISTRY }}/${{ env.CHART_NAME }}"
