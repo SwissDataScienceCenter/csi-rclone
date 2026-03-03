@@ -7,7 +7,6 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  CHART_NAME: ${{ github.repository }}/helm-chart-dev
 
 defaults:
   run:
@@ -112,4 +111,4 @@ jobs:
       - name: Publish chart
         run: |
           helm package deploy/csi-rclone
-          helm push "csi-rclone-${{ needs.build-image.outputs.image_tag }}.tgz" "oci://${{ env.REGISTRY }}/${{ env.CHART_NAME }}"
+          helm push "csi-rclone-${{ needs.build-image.outputs.image_tag }}.tgz" "oci://${{ needs.build-image.outputs.image_repository }}/helm-chart-dev"
