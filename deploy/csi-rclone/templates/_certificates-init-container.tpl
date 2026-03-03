@@ -3,8 +3,6 @@
 {{- $customCAsForMountsEnabled := .Values.csiNodepluginRclone.certificates.customCAsForDataConnectorMounts -}}
 - name: init-certificates
   image: "{{ .Values.csiNodepluginRclone.certificates.image.repository }}:{{ .Values.csiNodepluginRclone.certificates.image.tag }}"
-  securityContext:
-    {{- toYaml .Values.securityContext | nindent 4 }}
   volumeMounts:
     - name: etc-ssl-certs
       mountPath: /etc/ssl/certs/
