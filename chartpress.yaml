@@ -3,6 +3,7 @@ charts:
     imagePrefix: renku/
     resetTag: ""
     resetVersion: 0.2.0
+    baseVersion: 0.7.0-0.dev
     repo:
       git: SwissDataScienceCenter/helm-charts
       published: https://swissdatasciencecenter.github.io/helm-charts
