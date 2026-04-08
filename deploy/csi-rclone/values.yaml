@@ -117,8 +117,6 @@ csiNodepluginRclone:
       tag: "0.0.2"
     customCAs: []
     # - secret:
-    customCAsForDataConnectorMounts: []
-    # - secret:
   serviceAccount:
     annotations: {}
   nodeSelector: {}
