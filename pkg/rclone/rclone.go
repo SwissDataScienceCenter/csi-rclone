@@ -3,6 +3,7 @@ package rclone
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,11 +11,11 @@ import (
 	"net/http"
 	"os"
 	os_exec "os/exec"
-	"syscall"
-
 	"strings"
+	"sync"
+	"syscall"
+	"time"
 
-	"golang.org/x/net/context"
 	"gopkg.in/ini.v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -44,6 +45,10 @@ type Rclone struct {
 	port       int
 	cacheDir   string
 	cacheSize  string
+
+	// TODO: unmount queue
+	unmountContexts map[string]context.Context
+	unmountMutex    sync.Mutex
 }
 
 type RcloneVolume struct {
@@ -252,7 +257,7 @@ func (r *Rclone) CreateVol(ctx context.Context, volumeName, remote, remotePath, 
 	return r.command("mkdir", remote, path, flags)
 }
 
-func (r Rclone) DeleteVol(ctx context.Context, rcloneVolume *RcloneVolume, rcloneConfigPath string, parameters map[string]string) error {
+func (r *Rclone) DeleteVol(ctx context.Context, rcloneVolume *RcloneVolume, rcloneConfigPath string, parameters map[string]string) error {
 	flags := make(map[string]string)
 	for key, value := range parameters {
 		flags[key] = value
@@ -261,52 +266,97 @@ func (r Rclone) DeleteVol(ctx context.Context, rcloneVolume *RcloneVolume, rclon
 	return r.command("purge", rcloneVolume.Remote, rcloneVolume.RemotePath, flags)
 }
 
-func (r Rclone) Unmount(ctx context.Context, volumeId string, targetPath string) error {
-	rcloneVolume := &RcloneVolume{ID: volumeId}
+func (r *Rclone) Unmount(ctx context.Context, volumeId string, targetPath string) error {
+	// Unmount in the background, with only one process per volume ID
+	r.unmountMutex.Lock()
+	unmountContext, found := r.unmountContexts[volumeId]
+	if !found {
+		unmountContext = r.unmountInBackground(volumeId, targetPath, time.Minute)
+		r.unmountContexts[volumeId] = unmountContext
+	}
+	r.unmountMutex.Unlock()
 
-	klog.Infof("unmounting %s", rcloneVolume.deploymentName())
-	unmountArgs := UnmountRequest{
-		MountPoint: targetPath,
+	// Wait for the unmounting to finish
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-unmountContext.Done():
 	}
-	postBody, err := json.Marshal(unmountArgs)
-	if err != nil {
-		return fmt.Errorf("unmounting failed: couldn't create request body: %s", err)
-	}
-	requestBody := bytes.NewBuffer(postBody)
-	resp, err := http.Post(fmt.Sprintf("http://localhost:%d/mount/unmount", r.port), "application/json", requestBody)
-	if err != nil {
-		return fmt.Errorf("unmounting failed: couldn't send HTTP request: %w", err)
-	}
-	err = checkResponse(resp)
-	if err != nil {
-		return fmt.Errorf("unmounting failed: %w", err)
-	}
-	klog.Infof("deleted mount with volume ID %s at path %s", volumeId, targetPath)
 
-	configDelete := ConfigDeleteRequest{
-		Name: rcloneVolume.deploymentName(),
-	}
-	postBody, err = json.Marshal(configDelete)
-	if err != nil {
-		return fmt.Errorf("deleting config failed: couldn't create request body: %s", err)
-	}
-	requestBody = bytes.NewBuffer(postBody)
-	resp, err = http.Post(fmt.Sprintf("http://localhost:%d/config/delete", r.port), "application/json", requestBody)
-	if err != nil {
-		klog.Errorf("deleting config failed: couldn't send HTTP request: %v", err)
+	// Reset the unmountContext map
+	r.unmountMutex.Lock()
+	delete(r.unmountContexts, volumeId)
+	r.unmountMutex.Unlock()
+
+	err := context.Cause(unmountContext)
+	if errors.Is(err, context.Canceled) {
 		return nil
 	}
-	err = checkResponse(resp)
-	if err != nil {
-		klog.Errorf("deleting config failed: %v", err)
-		return nil
-	}
-	klog.Infof("deleted config for volume ID %s at path %s", volumeId, targetPath)
-
-	return nil
+	return err
 }
 
-func (r Rclone) GetVolumeById(ctx context.Context, volumeId string) (*RcloneVolume, error) {
+func (r *Rclone) unmountInBackground(volumeId string, targetPath string, timeout time.Duration) context.Context {
+	unmountCtx, unmountCancel := context.WithCancelCause(context.Background())
+	// Setup context deadline
+	go func() {
+		time.Sleep(timeout)
+		unmountCancel(context.DeadlineExceeded)
+	}()
+	// Perform unmounting in the background
+	go func() {
+		err := func() error {
+			rcloneVolume := &RcloneVolume{ID: volumeId}
+
+			// TODO: wait for the VFS queue to be drained
+
+			klog.Infof("unmounting %s", rcloneVolume.deploymentName())
+			unmountArgs := UnmountRequest{
+				MountPoint: targetPath,
+			}
+			postBody, err := json.Marshal(unmountArgs)
+			if err != nil {
+				return fmt.Errorf("unmounting failed: couldn't create request body: %s", err)
+			}
+			requestBody := bytes.NewBuffer(postBody)
+			resp, err := http.Post(fmt.Sprintf("http://localhost:%d/mount/unmount", r.port), "application/json", requestBody)
+			if err != nil {
+				return fmt.Errorf("unmounting failed: couldn't send HTTP request: %w", err)
+			}
+			err = checkResponse(resp)
+			if err != nil {
+				return fmt.Errorf("unmounting failed: %w", err)
+			}
+			klog.Infof("deleted mount with volume ID %s at path %s", volumeId, targetPath)
+
+			configDelete := ConfigDeleteRequest{
+				Name: rcloneVolume.deploymentName(),
+			}
+			postBody, err = json.Marshal(configDelete)
+			if err != nil {
+				return fmt.Errorf("deleting config failed: couldn't create request body: %s", err)
+			}
+			requestBody = bytes.NewBuffer(postBody)
+			resp, err = http.Post(fmt.Sprintf("http://localhost:%d/config/delete", r.port), "application/json", requestBody)
+			if err != nil {
+				klog.Errorf("deleting config failed: couldn't send HTTP request: %v", err)
+				return nil
+			}
+			err = checkResponse(resp)
+			if err != nil {
+				klog.Errorf("deleting config failed: %v", err)
+				return nil
+			}
+			klog.Infof("deleted config for volume ID %s at path %s", volumeId, targetPath)
+
+			return nil
+		}()
+		unmountCancel(err)
+	}()
+
+	return unmountCtx
+}
+
+func (r *Rclone) GetVolumeById(ctx context.Context, volumeId string) (*RcloneVolume, error) {
 	pvs, err := r.kubeClient.CoreV1().PersistentVolumes().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, err
@@ -355,11 +405,13 @@ func (r Rclone) GetVolumeById(ctx context.Context, volumeId string) (*RcloneVolu
 
 func NewRclone(kubeClient *kubernetes.Clientset, port int, cacheDir string, cacheSize string) Operations {
 	rclone := &Rclone{
-		execute:    exec.New(),
-		kubeClient: kubeClient,
-		port:       port,
-		cacheDir:   cacheDir,
-		cacheSize:  cacheSize,
+		execute:         exec.New(),
+		kubeClient:      kubeClient,
+		port:            port,
+		cacheDir:        cacheDir,
+		cacheSize:       cacheSize,
+		unmountContexts: map[string]context.Context{},
+		unmountMutex:    sync.Mutex{},
 	}
 	return rclone
 }
