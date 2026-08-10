@@ -314,13 +314,14 @@ func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 		return nil, status.Error(codes.InvalidArgument, "NodeUnpublishVolume Target Path must be provided")
 	}
 
-	if _, err := ns.RcloneOps.GetVolumeById(ctx, req.GetVolumeId()); err == ErrVolumeNotFound {
+	rcloneVolume, err := ns.RcloneOps.GetVolumeById(ctx, req.GetVolumeId())
+	if err == ErrVolumeNotFound {
 		klog.Warning("VolumeId not found for NodeUnpublishVolume")
 		mount.CleanupMountPoint(req.GetTargetPath(), ns.mounter, false)
 		return &csi.NodeUnpublishVolumeResponse{}, nil
 	}
 
-	if err := ns.RcloneOps.Unmount(ctx, req.GetVolumeId(), targetPath); err != nil {
+	if err := ns.RcloneOps.Unmount(ctx, rcloneVolume, targetPath); err != nil {
 		klog.Warningf("Unmounting volume failed: %s", err)
 	}
 	mount.CleanupMountPoint(req.GetTargetPath(), ns.mounter, false)

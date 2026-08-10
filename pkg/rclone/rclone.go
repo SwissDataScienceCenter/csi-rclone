@@ -32,7 +32,7 @@ type Operations interface {
 	CreateVol(ctx context.Context, volumeName, remote, remotePath, rcloneConfigPath string, pameters map[string]string) error
 	DeleteVol(ctx context.Context, rcloneVolume *RcloneVolume, rcloneConfigPath string, pameters map[string]string) error
 	Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPath string, rcloneConfigData string, readOnly bool, pameters map[string]string) error
-	Unmount(ctx context.Context, volumeId string, targetPath string) error
+	Unmount(ctx context.Context, rcloneVolume *RcloneVolume, targetPath string) error
 	GetVolumeById(ctx context.Context, volumeId string) (*RcloneVolume, error)
 	Cleanup() error
 	Run() error
@@ -282,12 +282,13 @@ func (r *Rclone) DeleteVol(ctx context.Context, rcloneVolume *RcloneVolume, rclo
 	return r.command("purge", rcloneVolume.Remote, rcloneVolume.RemotePath, flags)
 }
 
-func (r *Rclone) Unmount(ctx context.Context, volumeId string, targetPath string) error {
+func (r *Rclone) Unmount(ctx context.Context, rcloneVolume *RcloneVolume, targetPath string) error {
 	// Unmount in the background, with only one process per volume ID
+	volumeId := rcloneVolume.ID
 	r.unmountMutex.Lock()
 	unmountContext, found := r.unmountContexts[volumeId]
 	if !found {
-		unmountContext = r.unmountInBackground(volumeId, targetPath, time.Minute)
+		unmountContext = r.unmountInBackground(rcloneVolume, targetPath, time.Minute)
 		r.unmountContexts[volumeId] = unmountContext
 	}
 	r.unmountMutex.Unlock()
@@ -311,7 +312,7 @@ func (r *Rclone) Unmount(ctx context.Context, volumeId string, targetPath string
 	return err
 }
 
-func (r *Rclone) unmountInBackground(volumeId string, targetPath string, timeout time.Duration) context.Context {
+func (r *Rclone) unmountInBackground(rcloneVolume *RcloneVolume, targetPath string, timeout time.Duration) context.Context {
 	unmountCtx, unmountCancel := context.WithCancelCause(context.Background())
 	// Setup context deadline
 	go func() {
@@ -321,16 +322,10 @@ func (r *Rclone) unmountInBackground(volumeId string, targetPath string, timeout
 	// Perform unmounting in the background
 	go func() {
 		err := func() error {
-			rcloneVolume := &RcloneVolume{ID: volumeId}
-
-			// TODO: wait for the VFS queue to be drained
-			vfs, err := r.getVfs(unmountCtx, *rcloneVolume)
-			if err != nil {
-				klog.Errorf("Error listing VFSes: %v", err)
-			}
-			klog.Infof("Got VFS: '%s'", vfs)
+			configName := rcloneVolume.deploymentName()
+			vfs := fmt.Sprintf("%s:%s", configName, rcloneVolume.RemotePath)
 			if vfs != "" {
-				err = r.waitForVFSQueue(unmountCtx, vfs)
+				err := r.waitForVFSQueue(unmountCtx, vfs)
 				if err != nil {
 					klog.Infof("Error waiting for VFS: %v", err)
 				}
@@ -353,7 +348,7 @@ func (r *Rclone) unmountInBackground(volumeId string, targetPath string, timeout
 			if err != nil {
 				return fmt.Errorf("unmounting failed: %w", err)
 			}
-			klog.Infof("deleted mount with volume ID %s at path %s", volumeId, targetPath)
+			klog.Infof("deleted mount with volume ID %s at path %s", rcloneVolume.ID, targetPath)
 
 			configDelete := ConfigDeleteRequest{
 				Name: rcloneVolume.deploymentName(),
@@ -373,7 +368,7 @@ func (r *Rclone) unmountInBackground(volumeId string, targetPath string, timeout
 				klog.Errorf("deleting config failed: %v", err)
 				return nil
 			}
-			klog.Infof("deleted config for volume ID %s at path %s", volumeId, targetPath)
+			klog.Infof("deleted config for volume ID %s at path %s", rcloneVolume.ID, targetPath)
 
 			return nil
 		}()
@@ -383,39 +378,39 @@ func (r *Rclone) unmountInBackground(volumeId string, targetPath string, timeout
 	return unmountCtx
 }
 
-func (r *Rclone) getVfs(ctx context.Context, rcloneVolume RcloneVolume) (vfsName string, err error) {
-	req, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("http://localhost:%d/vfs/list", r.port), nil)
-	if err != nil {
-		return "", fmt.Errorf("Listing VFSes failed: %w", err)
-	}
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("Listing VFSes failed: %w", err)
-	}
-	err = checkResponse(res)
-	if err != nil {
-		return "", fmt.Errorf("Listing VFSes failed: %w", err)
-	}
-	body, err := io.ReadAll(res.Body)
-	defer res.Body.Close()
-	if err != nil {
-		return "", fmt.Errorf("Listing VFSes failed: %w", err)
-	}
-	var result VfsListResponse
-	err = json.Unmarshal(body, &result)
-	if err != nil {
-		return "", fmt.Errorf("Listing VFSes failed: %w", err)
-	}
-	configName := rcloneVolume.deploymentName()
-	searchString := fmt.Sprintf("%s:", configName)
-	for idx := range result.VfsList {
-		vfs := result.VfsList[idx]
-		if strings.Contains(vfs, searchString) {
-			return vfs, nil
-		}
-	}
-	return "", fmt.Errorf("Could not find the VFS for volume %s", rcloneVolume.ID)
-}
+// func (r *Rclone) getVfs(ctx context.Context, rcloneVolume RcloneVolume) (vfsName string, err error) {
+// 	req, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("http://localhost:%d/vfs/list", r.port), nil)
+// 	if err != nil {
+// 		return "", fmt.Errorf("Listing VFSes failed: %w", err)
+// 	}
+// 	res, err := http.DefaultClient.Do(req)
+// 	if err != nil {
+// 		return "", fmt.Errorf("Listing VFSes failed: %w", err)
+// 	}
+// 	err = checkResponse(res)
+// 	if err != nil {
+// 		return "", fmt.Errorf("Listing VFSes failed: %w", err)
+// 	}
+// 	body, err := io.ReadAll(res.Body)
+// 	defer res.Body.Close()
+// 	if err != nil {
+// 		return "", fmt.Errorf("Listing VFSes failed: %w", err)
+// 	}
+// 	var result VfsListResponse
+// 	err = json.Unmarshal(body, &result)
+// 	if err != nil {
+// 		return "", fmt.Errorf("Listing VFSes failed: %w", err)
+// 	}
+// 	configName := rcloneVolume.deploymentName()
+// 	searchString := fmt.Sprintf("%s:", configName)
+// 	for idx := range result.VfsList {
+// 		vfs := result.VfsList[idx]
+// 		if strings.Contains(vfs, searchString) {
+// 			return vfs, nil
+// 		}
+// 	}
+// 	return "", fmt.Errorf("Could not find the VFS for volume %s", rcloneVolume.ID)
+// }
 
 func (r *Rclone) waitForVFSQueue(ctx context.Context, vfs string) error {
 	for {
@@ -431,6 +426,7 @@ func (r *Rclone) waitForVFSQueue(ctx context.Context, vfs string) error {
 			klog.Infof("Unmounting VFS '%s' still waiting for files: %s", vfs, strings.Join(files, ", "))
 			time.Sleep(time.Second)
 		} else {
+			klog.Infof("VFS '%s' queue is empty", vfs)
 			return nil
 		}
 	}
