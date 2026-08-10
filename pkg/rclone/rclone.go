@@ -67,11 +67,11 @@ type VfsListResponse struct {
 	VfsList []string `json:"vfses,omitempty"`
 }
 
-type VfsStatsRequest struct {
+type VfsQueueRequest struct {
 	Fs string `json:"fs,omitempty"`
 }
 
-type VfsStatsResponse struct {
+type VfsQueueResponse struct {
 	Queue []VfsQueue `json:"queue,omitempty"`
 }
 
@@ -329,6 +329,12 @@ func (r *Rclone) unmountInBackground(volumeId string, targetPath string, timeout
 				klog.Errorf("Error listing VFSes: %v", err)
 			}
 			klog.Infof("Got VFS: '%s'", vfs)
+			if vfs != "" {
+				err = r.waitForVFSQueue(unmountCtx, vfs)
+				if err != nil {
+					klog.Infof("Error waiting for VFS: %v", err)
+				}
+			}
 
 			klog.Infof("unmounting %s", rcloneVolume.deploymentName())
 			unmountArgs := UnmountRequest{
@@ -411,10 +417,55 @@ func (r *Rclone) getVfs(ctx context.Context, rcloneVolume RcloneVolume) (vfsName
 	return "", fmt.Errorf("Could not find the VFS for volume %s", rcloneVolume.ID)
 }
 
-// func waitForVFSQueue(rcloneVolume RcloneVolume) {
-// 	configName := rcloneVolume.deploymentName()
+func (r *Rclone) waitForVFSQueue(ctx context.Context, vfs string) error {
+	for {
+		queue, err := r.getVFSQueue(ctx, vfs)
+		if err != nil {
+			return err
+		}
+		if len(queue.Queue) > 0 {
+			files := []string{}
+			for idx := range queue.Queue {
+				files = append(files, queue.Queue[idx].Name)
+			}
+			klog.Infof("Unmounting VFS '%s' still waiting for files: %s", vfs, strings.Join(files, ", "))
+			time.Sleep(time.Second)
+		} else {
+			return nil
+		}
+	}
+}
 
-// }
+func (r *Rclone) getVFSQueue(ctx context.Context, vfs string) (queue VfsQueueResponse, err error) {
+	postBody, err := json.Marshal(VfsQueueRequest{Fs: vfs})
+	if err != nil {
+		return queue, fmt.Errorf("Getting VFS queue failed: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("http://localhost:%d/vfs/queue", r.port), bytes.NewBuffer(postBody))
+	if err != nil {
+		return queue, fmt.Errorf("Getting VFS queue failed: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return queue, fmt.Errorf("Getting VFS queue failed: %w", err)
+	}
+	err = checkResponse(res)
+	if err != nil {
+		return queue, fmt.Errorf("Getting VFS queue failed: %w", err)
+	}
+	body, err := io.ReadAll(res.Body)
+	defer res.Body.Close()
+	if err != nil {
+		return queue, fmt.Errorf("Getting VFS queue failed: %w", err)
+	}
+	var result VfsQueueResponse
+	err = json.Unmarshal(body, &result)
+	if err != nil {
+		return queue, fmt.Errorf("Getting VFS queue failed: %w", err)
+	}
+	return result, nil
+}
 
 func (r *Rclone) GetVolumeById(ctx context.Context, volumeId string) (*RcloneVolume, error) {
 	pvs, err := r.kubeClient.CoreV1().PersistentVolumes().List(ctx, metav1.ListOptions{})
