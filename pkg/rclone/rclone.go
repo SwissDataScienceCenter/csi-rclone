@@ -66,10 +66,6 @@ type MountRequest struct {
 	MountOpt   MountOpt `json:"mountOpt"`
 }
 
-type VfsListResponse struct {
-	VfsList []string `json:"vfses,omitempty"`
-}
-
 type VfsQueueRequest struct {
 	Fs string `json:"fs,omitempty"`
 }
