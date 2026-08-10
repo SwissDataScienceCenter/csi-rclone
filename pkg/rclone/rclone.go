@@ -28,6 +28,11 @@ var (
 	ErrVolumeNotFound = errors.New("volume is not found")
 )
 
+var (
+	// Timeout for unmounting a volume: wait for the VFS queue to sync files until the deadline
+	unmountTimeout = time.Minute
+)
+
 type Operations interface {
 	CreateVol(ctx context.Context, volumeName, remote, remotePath, rcloneConfigPath string, pameters map[string]string) error
 	DeleteVol(ctx context.Context, rcloneVolume *RcloneVolume, rcloneConfigPath string, pameters map[string]string) error
@@ -39,14 +44,12 @@ type Operations interface {
 }
 
 type Rclone struct {
-	execute    exec.Interface
-	kubeClient *kubernetes.Clientset
-	daemonCmd  *os_exec.Cmd
-	port       int
-	cacheDir   string
-	cacheSize  string
-
-	// TODO: unmount queue
+	execute         exec.Interface
+	kubeClient      *kubernetes.Clientset
+	daemonCmd       *os_exec.Cmd
+	port            int
+	cacheDir        string
+	cacheSize       string
 	unmountContexts map[string]context.Context
 	unmountMutex    sync.Mutex
 }
@@ -288,7 +291,7 @@ func (r *Rclone) Unmount(ctx context.Context, rcloneVolume *RcloneVolume, target
 	r.unmountMutex.Lock()
 	unmountContext, found := r.unmountContexts[volumeId]
 	if !found {
-		unmountContext = r.unmountInBackground(rcloneVolume, targetPath, time.Minute)
+		unmountContext = r.unmountInBackground(rcloneVolume, targetPath, unmountTimeout)
 		r.unmountContexts[volumeId] = unmountContext
 	}
 	r.unmountMutex.Unlock()
@@ -377,40 +380,6 @@ func (r *Rclone) unmountInBackground(rcloneVolume *RcloneVolume, targetPath stri
 
 	return unmountCtx
 }
-
-// func (r *Rclone) getVfs(ctx context.Context, rcloneVolume RcloneVolume) (vfsName string, err error) {
-// 	req, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("http://localhost:%d/vfs/list", r.port), nil)
-// 	if err != nil {
-// 		return "", fmt.Errorf("Listing VFSes failed: %w", err)
-// 	}
-// 	res, err := http.DefaultClient.Do(req)
-// 	if err != nil {
-// 		return "", fmt.Errorf("Listing VFSes failed: %w", err)
-// 	}
-// 	err = checkResponse(res)
-// 	if err != nil {
-// 		return "", fmt.Errorf("Listing VFSes failed: %w", err)
-// 	}
-// 	body, err := io.ReadAll(res.Body)
-// 	defer res.Body.Close()
-// 	if err != nil {
-// 		return "", fmt.Errorf("Listing VFSes failed: %w", err)
-// 	}
-// 	var result VfsListResponse
-// 	err = json.Unmarshal(body, &result)
-// 	if err != nil {
-// 		return "", fmt.Errorf("Listing VFSes failed: %w", err)
-// 	}
-// 	configName := rcloneVolume.deploymentName()
-// 	searchString := fmt.Sprintf("%s:", configName)
-// 	for idx := range result.VfsList {
-// 		vfs := result.VfsList[idx]
-// 		if strings.Contains(vfs, searchString) {
-// 			return vfs, nil
-// 		}
-// 	}
-// 	return "", fmt.Errorf("Could not find the VFS for volume %s", rcloneVolume.ID)
-// }
 
 func (r *Rclone) waitForVFSQueue(ctx context.Context, vfs string) error {
 	for {
