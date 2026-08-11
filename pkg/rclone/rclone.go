@@ -323,11 +323,9 @@ func (r *Rclone) unmountInBackground(rcloneVolume *RcloneVolume, targetPath stri
 		err := func() error {
 			configName := rcloneVolume.deploymentName()
 			vfs := fmt.Sprintf("%s:%s", configName, rcloneVolume.RemotePath)
-			if vfs != "" {
-				err := r.waitForVFSQueue(unmountCtx, vfs)
-				if err != nil {
-					klog.Infof("Error waiting for VFS: %v", err)
-				}
+			err := r.waitForVFSQueue(unmountCtx, vfs)
+			if err != nil {
+				klog.Infof("Error waiting for VFS: %v", err)
 			}
 
 			klog.Infof("unmounting %s", rcloneVolume.deploymentName())
@@ -400,30 +398,30 @@ func (r *Rclone) waitForVFSQueue(ctx context.Context, vfs string) error {
 func (r *Rclone) getVFSQueue(ctx context.Context, vfs string) (queue VfsQueueResponse, err error) {
 	postBody, err := json.Marshal(VfsQueueRequest{Fs: vfs})
 	if err != nil {
-		return queue, fmt.Errorf("Getting VFS queue failed: %w", err)
+		return queue, fmt.Errorf("getting VFS queue failed: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("http://localhost:%d/vfs/queue", r.port), bytes.NewBuffer(postBody))
 	if err != nil {
-		return queue, fmt.Errorf("Getting VFS queue failed: %w", err)
+		return queue, fmt.Errorf("getting VFS queue failed: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return queue, fmt.Errorf("Getting VFS queue failed: %w", err)
+		return queue, fmt.Errorf("getting VFS queue failed: %w", err)
 	}
 	err = checkResponse(res)
 	if err != nil {
-		return queue, fmt.Errorf("Getting VFS queue failed: %w", err)
+		return queue, fmt.Errorf("getting VFS queue failed: %w", err)
 	}
 	body, err := io.ReadAll(res.Body)
 	defer res.Body.Close()
 	if err != nil {
-		return queue, fmt.Errorf("Getting VFS queue failed: %w", err)
+		return queue, fmt.Errorf("getting VFS queue failed: %w", err)
 	}
 	var result VfsQueueResponse
 	err = json.Unmarshal(body, &result)
 	if err != nil {
-		return queue, fmt.Errorf("Getting VFS queue failed: %w", err)
+		return queue, fmt.Errorf("getting VFS queue failed: %w", err)
 	}
 	return result, nil
 }
