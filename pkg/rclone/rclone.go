@@ -283,6 +283,9 @@ func (r *Rclone) DeleteVol(ctx context.Context, rcloneVolume *RcloneVolume, rclo
 
 func (r *Rclone) Unmount(ctx context.Context, rcloneVolume *RcloneVolume, targetPath string) error {
 	// Unmount in the background, with only one process per volume ID
+	// Note that `ctx` corresponds to the `NodeUnpublishVolume` gRPC handling context and may get cancelled by the
+	// client timing out. Since we want to wait and unmount even if the client cancels the gRPC call, we perform
+	// the unmount operation in the background to guarantee that we try to call unmount on rclone.
 	volumeId := rcloneVolume.ID
 	r.unmountMutex.Lock()
 	unmountContext, found := r.unmountContexts[volumeId]
