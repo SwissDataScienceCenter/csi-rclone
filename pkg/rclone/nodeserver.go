@@ -315,8 +315,12 @@ func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 	}
 
 	rcloneVolume, err := ns.RcloneOps.GetVolumeById(ctx, req.GetVolumeId())
-	if err == ErrVolumeNotFound {
-		klog.Warning("VolumeId not found for NodeUnpublishVolume")
+	if err != nil {
+		if err == ErrVolumeNotFound {
+			klog.Warning("VolumeId not found for NodeUnpublishVolume")
+		} else {
+			klog.Errorf("Could not find rclone volume from volume ID %s", req.GetVolumeId())
+		}
 		mount.CleanupMountPoint(req.GetTargetPath(), ns.mounter, false)
 		return &csi.NodeUnpublishVolumeResponse{}, nil
 	}
