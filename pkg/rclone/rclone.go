@@ -3,6 +3,7 @@ package rclone
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,11 +11,10 @@ import (
 	"net/http"
 	"os"
 	os_exec "os/exec"
-	"syscall"
-
 	"strings"
+	"syscall"
+	"time"
 
-	"golang.org/x/net/context"
 	"gopkg.in/ini.v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -27,11 +27,16 @@ var (
 	ErrVolumeNotFound = errors.New("volume is not found")
 )
 
+const (
+	// Timeout for waiting on the VFS queue to sync all files before unmounting
+	unmountVfsQueueTimeout = time.Minute
+)
+
 type Operations interface {
 	CreateVol(ctx context.Context, volumeName, remote, remotePath, rcloneConfigPath string, pameters map[string]string) error
 	DeleteVol(ctx context.Context, rcloneVolume *RcloneVolume, rcloneConfigPath string, pameters map[string]string) error
 	Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPath string, rcloneConfigData string, readOnly bool, pameters map[string]string) error
-	Unmount(ctx context.Context, volumeId string, targetPath string) error
+	Unmount(ctx context.Context, rcloneVolume *RcloneVolume, targetPath string) error
 	GetVolumeById(ctx context.Context, volumeId string) (*RcloneVolume, error)
 	Cleanup() error
 	Run() error
@@ -56,6 +61,18 @@ type MountRequest struct {
 	MountPoint string   `json:"mountPoint"`
 	VfsOpt     VfsOpt   `json:"vfsOpt"`
 	MountOpt   MountOpt `json:"mountOpt"`
+}
+
+type VfsQueueRequest struct {
+	Fs string `json:"fs,omitempty"`
+}
+
+type VfsQueueResponse struct {
+	Queue []VfsQueue `json:"queue,omitempty"`
+}
+
+type VfsQueue struct {
+	Name string `json:"name"`
 }
 
 // VfsOpt is options for creating the vfs
@@ -252,7 +269,7 @@ func (r *Rclone) CreateVol(ctx context.Context, volumeName, remote, remotePath, 
 	return r.command("mkdir", remote, path, flags)
 }
 
-func (r Rclone) DeleteVol(ctx context.Context, rcloneVolume *RcloneVolume, rcloneConfigPath string, parameters map[string]string) error {
+func (r *Rclone) DeleteVol(ctx context.Context, rcloneVolume *RcloneVolume, rcloneConfigPath string, parameters map[string]string) error {
 	flags := make(map[string]string)
 	for key, value := range parameters {
 		flags[key] = value
@@ -261,8 +278,15 @@ func (r Rclone) DeleteVol(ctx context.Context, rcloneVolume *RcloneVolume, rclon
 	return r.command("purge", rcloneVolume.Remote, rcloneVolume.RemotePath, flags)
 }
 
-func (r Rclone) Unmount(ctx context.Context, volumeId string, targetPath string) error {
-	rcloneVolume := &RcloneVolume{ID: volumeId}
+func (r *Rclone) Unmount(ctx context.Context, rcloneVolume *RcloneVolume, targetPath string) error {
+	configName := rcloneVolume.deploymentName()
+	vfs := fmt.Sprintf("%s:%s", configName, rcloneVolume.RemotePath)
+	queueCtx, queueCtxCancel := context.WithTimeout(ctx, unmountVfsQueueTimeout)
+	defer queueCtxCancel()
+	err := r.waitForVFSQueue(queueCtx, vfs)
+	if err != nil {
+		klog.Infof("Error waiting for VFS: %v", err)
+	}
 
 	klog.Infof("unmounting %s", rcloneVolume.deploymentName())
 	unmountArgs := UnmountRequest{
@@ -281,7 +305,7 @@ func (r Rclone) Unmount(ctx context.Context, volumeId string, targetPath string)
 	if err != nil {
 		return fmt.Errorf("unmounting failed: %w", err)
 	}
-	klog.Infof("deleted mount with volume ID %s at path %s", volumeId, targetPath)
+	klog.Infof("deleted mount with volume ID %s at path %s", rcloneVolume.ID, targetPath)
 
 	configDelete := ConfigDeleteRequest{
 		Name: rcloneVolume.deploymentName(),
@@ -301,12 +325,63 @@ func (r Rclone) Unmount(ctx context.Context, volumeId string, targetPath string)
 		klog.Errorf("deleting config failed: %v", err)
 		return nil
 	}
-	klog.Infof("deleted config for volume ID %s at path %s", volumeId, targetPath)
+	klog.Infof("deleted config for volume ID %s at path %s", rcloneVolume.ID, targetPath)
 
 	return nil
 }
 
-func (r Rclone) GetVolumeById(ctx context.Context, volumeId string) (*RcloneVolume, error) {
+func (r *Rclone) waitForVFSQueue(ctx context.Context, vfs string) error {
+	for {
+		queue, err := r.getVFSQueue(ctx, vfs)
+		if err != nil {
+			return err
+		}
+		if len(queue.Queue) > 0 {
+			files := []string{}
+			for idx := range queue.Queue {
+				files = append(files, queue.Queue[idx].Name)
+			}
+			klog.Infof("Unmounting VFS '%s' still waiting for files: %s", vfs, strings.Join(files, ", "))
+			time.Sleep(time.Second)
+		} else {
+			klog.Infof("VFS '%s' queue is empty", vfs)
+			return nil
+		}
+	}
+}
+
+func (r *Rclone) getVFSQueue(ctx context.Context, vfs string) (queue VfsQueueResponse, err error) {
+	postBody, err := json.Marshal(VfsQueueRequest{Fs: vfs})
+	if err != nil {
+		return queue, fmt.Errorf("getting VFS queue failed: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("http://localhost:%d/vfs/queue", r.port), bytes.NewBuffer(postBody))
+	if err != nil {
+		return queue, fmt.Errorf("getting VFS queue failed: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return queue, fmt.Errorf("getting VFS queue failed: %w", err)
+	}
+	err = checkResponse(res)
+	if err != nil {
+		return queue, fmt.Errorf("getting VFS queue failed: %w", err)
+	}
+	body, err := io.ReadAll(res.Body)
+	defer res.Body.Close()
+	if err != nil {
+		return queue, fmt.Errorf("getting VFS queue failed: %w", err)
+	}
+	var result VfsQueueResponse
+	err = json.Unmarshal(body, &result)
+	if err != nil {
+		return queue, fmt.Errorf("getting VFS queue failed: %w", err)
+	}
+	return result, nil
+}
+
+func (r *Rclone) GetVolumeById(ctx context.Context, volumeId string) (*RcloneVolume, error) {
 	pvs, err := r.kubeClient.CoreV1().PersistentVolumes().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, err

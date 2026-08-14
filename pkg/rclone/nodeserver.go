@@ -7,10 +7,12 @@ package rclone
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"gopkg.in/ini.v1"
@@ -22,7 +24,6 @@ import (
 	"github.com/SwissDataScienceCenter/csi-rclone/pkg/kube"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/fernet/fernet-go"
-	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/utils/mount"
@@ -30,13 +31,19 @@ import (
 	csicommon "github.com/kubernetes-csi/drivers/pkg/csi-common"
 )
 
-const CSI_ANNOTATION_PREFIX = "csi-rclone.dev"
-const pvcSecretNameAnnotation = CSI_ANNOTATION_PREFIX + "/secretName"
+const (
+	CSI_ANNOTATION_PREFIX   = "csi-rclone.dev"
+	pvcSecretNameAnnotation = CSI_ANNOTATION_PREFIX + "/secretName"
+	// Timeout for the Node Unpublish Operation
+	unpublishTimeout = 90 * time.Second
+)
 
 type nodeServer struct {
 	*csicommon.DefaultNodeServer
-	mounter   *mount.SafeFormatAndMount
-	RcloneOps Operations
+	mounter           *mount.SafeFormatAndMount
+	RcloneOps         Operations
+	unpublishContexts map[string]context.Context
+	unpublishMutex    sync.Mutex
 }
 
 // Mounting Volume (Preparation)
@@ -304,6 +311,11 @@ func extractConfigData(parameters map[string]string) (string, map[string]string)
 
 // Unmounting Volumes
 func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error) {
+	// Perform  NodeUnpublishVolumein the background, with only one process per volume ID.
+	// Note that `ctx` corresponds to the gRPC handling context and may get cancelled by the
+	// client timing out. Since we want to wait and unmount even if the client cancels the gRPC call, we perform
+	// the unmount operation in the background to guarantee that we try to call unmount on rclone.
+
 	klog.Infof("NodeUnpublishVolume called with: %s", req)
 	if err := validateUnPublishVolumeRequest(req); err != nil {
 		return nil, err
@@ -314,17 +326,32 @@ func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 		return nil, status.Error(codes.InvalidArgument, "NodeUnpublishVolume Target Path must be provided")
 	}
 
-	if _, err := ns.RcloneOps.GetVolumeById(ctx, req.GetVolumeId()); err == ErrVolumeNotFound {
-		klog.Warning("VolumeId not found for NodeUnpublishVolume")
-		mount.CleanupMountPoint(req.GetTargetPath(), ns.mounter, false)
-		return &csi.NodeUnpublishVolumeResponse{}, nil
+	volumeId := req.GetVolumeId()
+	ns.unpublishMutex.Lock()
+	unpublishContext, found := ns.unpublishContexts[volumeId]
+	if !found {
+		unpublishContext = ns.unpublishInBackground(volumeId, targetPath, unpublishTimeout)
+		ns.unpublishContexts[volumeId] = unpublishContext
+	}
+	ns.unpublishMutex.Unlock()
+
+	// Wait for the unpublish operation to finish
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-unpublishContext.Done():
 	}
 
-	if err := ns.RcloneOps.Unmount(ctx, req.GetVolumeId(), targetPath); err != nil {
-		klog.Warningf("Unmounting volume failed: %s", err)
+	// Reset the unmountContext map
+	ns.unpublishMutex.Lock()
+	delete(ns.unpublishContexts, volumeId)
+	ns.unpublishMutex.Unlock()
+
+	err := context.Cause(unpublishContext)
+	if errors.Is(err, context.Canceled) {
+		return &csi.NodeUnpublishVolumeResponse{}, nil
 	}
-	mount.CleanupMountPoint(req.GetTargetPath(), ns.mounter, false)
-	return &csi.NodeUnpublishVolumeResponse{}, nil
+	return nil, err
 }
 
 func validateUnPublishVolumeRequest(req *csi.NodeUnpublishVolumeRequest) error {
@@ -337,6 +364,39 @@ func validateUnPublishVolumeRequest(req *csi.NodeUnpublishVolumeRequest) error {
 	}
 
 	return nil
+}
+
+func (ns *nodeServer) unpublishInBackground(volumeId string, targetPath string, timeout time.Duration) context.Context {
+	unpublishCtx, unpublishCancel := context.WithCancelCause(context.Background())
+	// Setup context deadline
+	go func() {
+		time.Sleep(timeout)
+		unpublishCancel(context.DeadlineExceeded)
+	}()
+	// Perform unpublish in the background
+	go func() {
+		err := func() error {
+			rcloneVolume, err := ns.RcloneOps.GetVolumeById(unpublishCtx, volumeId)
+			if err != nil {
+				if err == ErrVolumeNotFound {
+					klog.Warningf("VolumeId %s not found for NodeUnpublishVolume", volumeId)
+				} else {
+					klog.Errorf("Could not find rclone volume from volume ID %s", volumeId)
+				}
+				mount.CleanupMountPoint(targetPath, ns.mounter, false)
+				return nil
+			}
+
+			if err := ns.RcloneOps.Unmount(unpublishCtx, rcloneVolume, targetPath); err != nil {
+				klog.Warningf("Unmounting volume %s failed: %s", volumeId, err)
+			}
+			mount.CleanupMountPoint(targetPath, ns.mounter, false)
+			return nil
+		}()
+		unpublishCancel(err)
+	}()
+
+	return unpublishCtx
 }
 
 // Resizing Volume

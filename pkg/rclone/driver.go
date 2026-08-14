@@ -1,6 +1,7 @@
 package rclone
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -84,7 +85,9 @@ func NewNodeServer(csiDriver *csicommon.CSIDriver, cacheDir string, cacheSize st
 			Interface: mount.New(""),
 			Exec:      utilexec.New(),
 		},
-		RcloneOps: rcloneOps,
+		RcloneOps:         rcloneOps,
+		unpublishContexts: map[string]context.Context{},
+		unpublishMutex:    sync.Mutex{},
 	}, nil
 }
 
