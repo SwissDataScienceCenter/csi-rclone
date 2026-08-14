@@ -328,10 +328,10 @@ func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 
 	volumeId := req.GetVolumeId()
 	ns.unpublishMutex.Lock()
-	unmountContext, found := ns.unpublishContexts[volumeId]
+	unpublishContext, found := ns.unpublishContexts[volumeId]
 	if !found {
-		unmountContext = ns.unpublishInBackground(volumeId, targetPath, unpublishTimeout)
-		ns.unpublishContexts[volumeId] = unmountContext
+		unpublishContext = ns.unpublishInBackground(volumeId, targetPath, unpublishTimeout)
+		ns.unpublishContexts[volumeId] = unpublishContext
 	}
 	ns.unpublishMutex.Unlock()
 
@@ -339,7 +339,7 @@ func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
-	case <-unmountContext.Done():
+	case <-unpublishContext.Done():
 	}
 
 	// Reset the unmountContext map
@@ -347,7 +347,7 @@ func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 	delete(ns.unpublishContexts, volumeId)
 	ns.unpublishMutex.Unlock()
 
-	err := context.Cause(unmountContext)
+	err := context.Cause(unpublishContext)
 	if errors.Is(err, context.Canceled) {
 		return &csi.NodeUnpublishVolumeResponse{}, nil
 	}
