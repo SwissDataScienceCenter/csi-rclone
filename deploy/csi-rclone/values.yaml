@@ -29,8 +29,7 @@ csiControllerRclone:
       repository: csi-rclone
       tag: latest
     imagePullPolicy: IfNotPresent
-    resources:
-      {}
+    resources: {}
       # limits:
       #   cpu: 100m
       #   memory: 128Mi
@@ -76,8 +75,7 @@ csiNodepluginRclone:
       repository: csi-rclone
       tag: "latest"
     imagePullPolicy: IfNotPresent
-    resources:
-      {}
+    resources: {}
       # limits:
       #   cpu: 100m
       #   memory: 128Mi
@@ -114,7 +112,7 @@ csiNodepluginRclone:
   certificates:
     image:
       repository: renku/certificates
-      tag: "0.0.2"
+      tag: "0.0.3"
     customCAs: []
     # - secret:
   serviceAccount:
