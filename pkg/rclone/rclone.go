@@ -307,6 +307,18 @@ func (r *Rclone) Unmount(ctx context.Context, rcloneVolume *RcloneVolume, target
 	}
 	klog.Infof("deleted mount with volume ID %s at path %s", rcloneVolume.ID, targetPath)
 
+	// The rclone config is shared by all the mounts of a volume (one per pod using it).
+	// Only delete it once the last mount is gone.
+	inUse, err := r.configInUse(ctx, rcloneVolume.deploymentName())
+	if err != nil {
+		klog.Errorf("could not list mounts, keeping config for volume ID %s: %v", rcloneVolume.ID, err)
+		return nil
+	}
+	if inUse {
+		klog.Infof("config for volume ID %s is still used by other mounts, not deleting it", rcloneVolume.ID)
+		return nil
+	}
+
 	configDelete := ConfigDeleteRequest{
 		Name: rcloneVolume.deploymentName(),
 	}
@@ -328,6 +340,40 @@ func (r *Rclone) Unmount(ctx context.Context, rcloneVolume *RcloneVolume, target
 	klog.Infof("deleted config for volume ID %s at path %s", rcloneVolume.ID, targetPath)
 
 	return nil
+}
+
+type ListMountsResponse struct {
+	MountPoints []struct {
+		Fs         string `json:"Fs"`
+		MountPoint string `json:"MountPoint"`
+	} `json:"mountPoints"`
+}
+
+// configInUse reports whether any active mount still uses the given rclone config.
+func (r *Rclone) configInUse(ctx context.Context, configName string) (bool, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("http://localhost:%d/mount/listmounts", r.port), strings.NewReader("{}"))
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("mount/listmounts returned status %d", resp.StatusCode)
+	}
+	var mounts ListMountsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&mounts); err != nil {
+		return false, err
+	}
+	for _, m := range mounts.MountPoints {
+		if strings.HasPrefix(m.Fs, configName+":") {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (r *Rclone) waitForVFSQueue(ctx context.Context, vfs string) error {
