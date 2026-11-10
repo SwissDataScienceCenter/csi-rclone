@@ -99,6 +99,31 @@ spec:
   volumeName: "csi-rclone-pv-example"
 ```
 
+### Mount options
+
+The rclone [VFS](https://rclone.org/commands/rclone_mount/#vfs-virtual-file-system) and
+[mount](https://rclone.org/commands/rclone_mount/#options) options of a volume can be set with the `vfsOpt` and
+`mountOpt` volume attributes. Each one is a JSON object in a string, with the option names used by the rclone
+remote control API ([`mount/mount`](https://rclone.org/rc/#mount-mount)). The supported options are the fields of
+the `VfsOpt` and `MountOpt` structs in [`pkg/rclone/rclone.go`](pkg/rclone/rclone.go); other options are ignored.
+
+```yaml
+    volumeAttributes:
+      secretName: csi-rclone-example-secret
+      secretNamespace: csi-rclone-example
+      vfsOpt: '{"CacheMode": "off", "DirCacheTime": "10s", "Links": true}'
+      mountOpt: '{"AttrTimeout": "1s"}'
+```
+
+By default the driver uses `CacheMode: writes`, `DirCacheTime: 60s`, `AllowNonEmpty: true` and `AllowOther: true`.
+
+#### Symlinks
+
+Symlinks are not supported by default: creating one fails with an I/O error. Set `"Links": true` in `vfsOpt` to
+enable them (the equivalent of `rclone mount --links`). A symlink is then stored on the remote as a regular file
+named `<link name>.rclonelink` whose content is the link target, and such files are shown as symlinks in the mount.
+Hard links are not supported.
+
 ## Installation
 
 You can install the CSI plugin via Helm. Please checkout the default values file at `deploy/csi-rclone/values.yaml`

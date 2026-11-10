@@ -107,6 +107,7 @@ type VfsOpt struct {
 	UsedIsSize         bool        `json:",omitempty"` // if true, use the `rclone size` algorithm for Used size
 	FastFingerprint    bool        `json:",omitempty"` // if set use fast fingerprints
 	DiskSpaceTotalSize string      `json:",omitempty"`
+	Links              bool        `json:",omitempty"` // translate symlinks to/from regular files with a '.rclonelink' extension
 }
 
 // Options for creating the mount
