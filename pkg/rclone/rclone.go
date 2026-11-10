@@ -25,6 +25,7 @@ import (
 
 var (
 	ErrVolumeNotFound = errors.New("volume is not found")
+	ErrMountNotFound  = errors.New("mount is not found")
 )
 
 const (
@@ -36,7 +37,7 @@ type Operations interface {
 	CreateVol(ctx context.Context, volumeName, remote, remotePath, rcloneConfigPath string, pameters map[string]string) error
 	DeleteVol(ctx context.Context, rcloneVolume *RcloneVolume, rcloneConfigPath string, pameters map[string]string) error
 	Mount(ctx context.Context, rcloneVolume *RcloneVolume, targetPath string, rcloneConfigData string, readOnly bool, pameters map[string]string) error
-	Unmount(ctx context.Context, rcloneVolume *RcloneVolume, targetPath string) error
+	Unmount(ctx context.Context, volumeId string, targetPath string) error
 	GetVolumeById(ctx context.Context, volumeId string) (*RcloneVolume, error)
 	Cleanup() error
 	Run() error
@@ -278,17 +279,34 @@ func (r *Rclone) DeleteVol(ctx context.Context, rcloneVolume *RcloneVolume, rclo
 	return r.command("purge", rcloneVolume.Remote, rcloneVolume.RemotePath, flags)
 }
 
-func (r *Rclone) Unmount(ctx context.Context, rcloneVolume *RcloneVolume, targetPath string) error {
-	configName := rcloneVolume.deploymentName()
-	vfs := fmt.Sprintf("%s:%s", configName, rcloneVolume.RemotePath)
+func (r *Rclone) Unmount(ctx context.Context, volumeId string, targetPath string) error {
+	// Find the mount by its mount point. The Fs of the mount is what was passed to rclone when mounting,
+	// so there is no need to rebuild it from the PersistentVolume, which does not exist for
+	// ephemeral inline volumes and does not always contain the remote path.
+	mounts, err := r.listMounts(ctx)
+	if err != nil {
+		return fmt.Errorf("unmounting failed: couldn't list mounts: %w", err)
+	}
+	var vfs string
+	for _, m := range mounts.MountPoints {
+		if m.MountPoint == targetPath {
+			vfs = m.Fs
+			break
+		}
+	}
+	if vfs == "" {
+		return ErrMountNotFound
+	}
+	configName, _, _ := strings.Cut(vfs, ":")
+
 	queueCtx, queueCtxCancel := context.WithTimeout(ctx, unmountVfsQueueTimeout)
 	defer queueCtxCancel()
-	err := r.waitForVFSQueue(queueCtx, vfs)
+	err = r.waitForVFSQueue(queueCtx, vfs)
 	if err != nil {
 		klog.Infof("Error waiting for VFS: %v", err)
 	}
 
-	klog.Infof("unmounting %s", rcloneVolume.deploymentName())
+	klog.Infof("unmounting %s", configName)
 	unmountArgs := UnmountRequest{
 		MountPoint: targetPath,
 	}
@@ -305,10 +323,22 @@ func (r *Rclone) Unmount(ctx context.Context, rcloneVolume *RcloneVolume, target
 	if err != nil {
 		return fmt.Errorf("unmounting failed: %w", err)
 	}
-	klog.Infof("deleted mount with volume ID %s at path %s", rcloneVolume.ID, targetPath)
+	klog.Infof("deleted mount with volume ID %s at path %s", volumeId, targetPath)
+
+	// The rclone config is shared by all the mounts of a volume (one per pod using it).
+	// Only delete it once the last mount is gone.
+	inUse, err := r.configInUse(ctx, configName)
+	if err != nil {
+		klog.Errorf("could not list mounts, keeping config for volume ID %s: %v", volumeId, err)
+		return nil
+	}
+	if inUse {
+		klog.Infof("config for volume ID %s is still used by other mounts, not deleting it", volumeId)
+		return nil
+	}
 
 	configDelete := ConfigDeleteRequest{
-		Name: rcloneVolume.deploymentName(),
+		Name: configName,
 	}
 	postBody, err = json.Marshal(configDelete)
 	if err != nil {
@@ -325,9 +355,49 @@ func (r *Rclone) Unmount(ctx context.Context, rcloneVolume *RcloneVolume, target
 		klog.Errorf("deleting config failed: %v", err)
 		return nil
 	}
-	klog.Infof("deleted config for volume ID %s at path %s", rcloneVolume.ID, targetPath)
+	klog.Infof("deleted config for volume ID %s at path %s", volumeId, targetPath)
 
 	return nil
+}
+
+type ListMountsResponse struct {
+	MountPoints []struct {
+		Fs         string `json:"Fs"`
+		MountPoint string `json:"MountPoint"`
+	} `json:"mountPoints"`
+}
+
+// listMounts returns the active mounts of the rclone daemon.
+func (r *Rclone) listMounts(ctx context.Context) (mounts ListMountsResponse, err error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("http://localhost:%d/mount/listmounts", r.port), strings.NewReader("{}"))
+	if err != nil {
+		return mounts, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return mounts, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return mounts, fmt.Errorf("mount/listmounts returned status %d", resp.StatusCode)
+	}
+	err = json.NewDecoder(resp.Body).Decode(&mounts)
+	return mounts, err
+}
+
+// configInUse reports whether any active mount still uses the given rclone config.
+func (r *Rclone) configInUse(ctx context.Context, configName string) (bool, error) {
+	mounts, err := r.listMounts(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, m := range mounts.MountPoints {
+		if strings.HasPrefix(m.Fs, configName+":") {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (r *Rclone) waitForVFSQueue(ctx context.Context, vfs string) error {

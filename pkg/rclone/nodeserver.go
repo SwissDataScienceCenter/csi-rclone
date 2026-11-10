@@ -311,7 +311,7 @@ func extractConfigData(parameters map[string]string) (string, map[string]string)
 
 // Unmounting Volumes
 func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error) {
-	// Perform  NodeUnpublishVolumein the background, with only one process per volume ID.
+	// Perform NodeUnpublishVolume in the background, with only one process per volume ID and target path.
 	// Note that `ctx` corresponds to the gRPC handling context and may get cancelled by the
 	// client timing out. Since we want to wait and unmount even if the client cancels the gRPC call, we perform
 	// the unmount operation in the background to guarantee that we try to call unmount on rclone.
@@ -327,11 +327,14 @@ func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 	}
 
 	volumeId := req.GetVolumeId()
+	// A volume can be published at several target paths on the same node (one per pod using it),
+	// so the operation is identified by both the volume ID and the target path.
+	unpublishKey := volumeId + "\x00" + targetPath
 	ns.unpublishMutex.Lock()
-	unpublishContext, found := ns.unpublishContexts[volumeId]
+	unpublishContext, found := ns.unpublishContexts[unpublishKey]
 	if !found {
 		unpublishContext = ns.unpublishInBackground(volumeId, targetPath, unpublishTimeout)
-		ns.unpublishContexts[volumeId] = unpublishContext
+		ns.unpublishContexts[unpublishKey] = unpublishContext
 	}
 	ns.unpublishMutex.Unlock()
 
@@ -344,7 +347,7 @@ func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 
 	// Reset the unmountContext map
 	ns.unpublishMutex.Lock()
-	delete(ns.unpublishContexts, volumeId)
+	delete(ns.unpublishContexts, unpublishKey)
 	ns.unpublishMutex.Unlock()
 
 	err := context.Cause(unpublishContext)
@@ -376,19 +379,12 @@ func (ns *nodeServer) unpublishInBackground(volumeId string, targetPath string, 
 	// Perform unpublish in the background
 	go func() {
 		err := func() error {
-			rcloneVolume, err := ns.RcloneOps.GetVolumeById(unpublishCtx, volumeId)
-			if err != nil {
-				if err == ErrVolumeNotFound {
-					klog.Warningf("VolumeId %s not found for NodeUnpublishVolume", volumeId)
+			if err := ns.RcloneOps.Unmount(unpublishCtx, volumeId, targetPath); err != nil {
+				if errors.Is(err, ErrMountNotFound) {
+					klog.Warningf("No rclone mount found at %s for volume %s", targetPath, volumeId)
 				} else {
-					klog.Errorf("Could not find rclone volume from volume ID %s", volumeId)
+					klog.Warningf("Unmounting volume %s failed: %s", volumeId, err)
 				}
-				mount.CleanupMountPoint(targetPath, ns.mounter, false)
-				return nil
-			}
-
-			if err := ns.RcloneOps.Unmount(unpublishCtx, rcloneVolume, targetPath); err != nil {
-				klog.Warningf("Unmounting volume %s failed: %s", volumeId, err)
 			}
 			mount.CleanupMountPoint(targetPath, ns.mounter, false)
 			return nil
