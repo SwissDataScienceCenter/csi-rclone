@@ -379,19 +379,12 @@ func (ns *nodeServer) unpublishInBackground(volumeId string, targetPath string, 
 	// Perform unpublish in the background
 	go func() {
 		err := func() error {
-			rcloneVolume, err := ns.RcloneOps.GetVolumeById(unpublishCtx, volumeId)
-			if err != nil {
-				if err == ErrVolumeNotFound {
-					klog.Warningf("VolumeId %s not found for NodeUnpublishVolume", volumeId)
+			if err := ns.RcloneOps.Unmount(unpublishCtx, volumeId, targetPath); err != nil {
+				if errors.Is(err, ErrMountNotFound) {
+					klog.Warningf("No rclone mount found at %s for volume %s", targetPath, volumeId)
 				} else {
-					klog.Errorf("Could not find rclone volume from volume ID %s", volumeId)
+					klog.Warningf("Unmounting volume %s failed: %s", volumeId, err)
 				}
-				mount.CleanupMountPoint(targetPath, ns.mounter, false)
-				return nil
-			}
-
-			if err := ns.RcloneOps.Unmount(unpublishCtx, rcloneVolume, targetPath); err != nil {
-				klog.Warningf("Unmounting volume %s failed: %s", volumeId, err)
 			}
 			mount.CleanupMountPoint(targetPath, ns.mounter, false)
 			return nil
